@@ -9,14 +9,18 @@ from rs_words.data_engine.patch_bank import Patch
 from rs_words.glyph import Stroke
 
 
-def _resize_patch(patch_image: np.ndarray, bbox: Tuple[int, int, int, int]) -> np.ndarray:
-    """Resize a patch image to the width/height defined by the stroke bbox (ymin, xmin, ymax, xmax)."""
-    ymin, xmin, ymax, xmax = bbox
-    target_w = xmax - xmin
-    target_h = ymax - ymin
+def _resize_patch(patch_image: np.ndarray, target_w: int, target_h: int) -> np.ndarray:
+    """Resize a patch image to the target width and height.
+
+    Supports both 2-D (H, W) and 3-D (H, W, C) inputs. The resized output is
+    always returned as float32 so callers can blend it without repeated casts.
+    """
     if target_w <= 0 or target_h <= 0:
-        return np.empty((0, 0, patch_image.shape[2]), dtype=patch_image.dtype)
-    return cv2.resize(patch_image, (target_w, target_h), interpolation=cv2.INTER_AREA)
+        if patch_image.ndim == 2:
+            return np.empty((0, 0), dtype=np.float32)
+        return np.empty((0, 0, patch_image.shape[2]), dtype=np.float32)
+    resized = cv2.resize(patch_image, (target_w, target_h), interpolation=cv2.INTER_AREA)
+    return resized.astype(np.float32)
 
 
 def _feather_mask(mask: np.ndarray) -> np.ndarray:
@@ -24,7 +28,7 @@ def _feather_mask(mask: np.ndarray) -> np.ndarray:
     binary = (mask > 0).astype(np.uint8) * 255
     if binary.sum() == 0:
         return np.zeros_like(mask, dtype=np.float32)
-    dt = cv2.distanceTransform(binary, cv2.DIST_L2, 5).astype(np.float32)
+    dt = cv2.distanceTransform(binary, cv2.DIST_L2, 5)
     max_dt = dt.max()
     if max_dt <= 0:
         return np.zeros_like(mask, dtype=np.float32)
@@ -80,7 +84,8 @@ def compose_text(
 ) -> np.ndarray:
     """Compose the final mosaic.
 
-    - `text_mask` is the full binary text mask, shape (H, W).
+    - `text_mask` is used only to determine the output canvas dimensions (H, W).
+      Its pixel values are not used as a mask during composition.
     - For each (stroke, patch) pair, place the resized patch into the stroke bbox.
     - Use the stroke mask (resized to bbox size) to generate a feather alpha and
       alpha-blend the patch over a black canvas.
@@ -100,7 +105,7 @@ def compose_text(
         target_w = xmax - xmin
         target_h = ymax - ymin
 
-        resized_patch = _resize_patch(patch.image, stroke.bbox)
+        resized_patch = _resize_patch(patch.image, target_w, target_h)
         if resized_patch.size == 0:
             continue
         if resized_patch.ndim == 2:
@@ -115,9 +120,17 @@ def compose_text(
         alpha = alpha[:, :, np.newaxis]
 
         roi = canvas[ymin:ymax, xmin:xmax]
-        if roi.shape[:2] != alpha.shape[:2] or roi.shape[:2] != resized_patch.shape[:2]:
+        roi_h, roi_w = roi.shape[:2]
+        if roi_h <= 0 or roi_w <= 0:
             continue
-        canvas[ymin:ymax, xmin:xmax] = alpha * resized_patch.astype(np.float32) + (1.0 - alpha) * roi
+
+        # Crop patch and alpha to the actual in-bounds ROI when a bbox extends
+        # past the canvas edges.
+        if roi_h != target_h or roi_w != target_w:
+            resized_patch = resized_patch[:roi_h, :roi_w]
+            alpha = alpha[:roi_h, :roi_w]
+
+        canvas[ymin:ymax, xmin:xmax] = alpha * resized_patch + (1.0 - alpha) * roi
 
     canvas = np.clip(canvas, 0, 255).astype(np.uint8)
 
