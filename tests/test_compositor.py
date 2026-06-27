@@ -109,11 +109,12 @@ def test_compose_basic():
     assert np.all(inside[:, :, 2] < 100)
 
     outside = output[0:20, 0:20]
-    assert np.all(outside == 0)
+    assert np.all(outside == 255)
 
 
 def test_compose_with_2d_patch():
     text_mask = np.zeros((100, 200), dtype=np.uint8)
+    text_mask[30:70, 50:150] = 255
     patch_image = np.full((64, 64), 200, dtype=np.uint8)
     patch = Patch("gray", "basin", patch_image, {})
 
@@ -146,7 +147,10 @@ def test_compose_with_tone_reference():
 
     assert output_with.shape == output_without.shape
     assert not np.array_equal(output_with, output_without)
-    assert np.mean(output_with[:, :, 1]) > np.mean(output_without[:, :, 1])
+    # Compare only the stroke region to avoid the white background dominating the mean.
+    inside_without = output_without[35:65, 55:145, 1]
+    inside_with = output_with[35:65, 55:145, 1]
+    assert np.mean(inside_with) > np.mean(inside_without)
 
 
 def test_compose_degenerate_bbox_skipped():
@@ -155,14 +159,14 @@ def test_compose_degenerate_bbox_skipped():
     stroke = Stroke(0, (10, 10, 10, 40), np.ones((0, 30), dtype=np.uint8))
     output = compose_text(text_mask, [(stroke, patch)])
     assert output.shape == (64, 64, 3)
-    assert np.all(output == 0)
+    assert np.all(output == 255)
 
 
 def test_compose_empty_stroke_matches():
     text_mask = np.zeros((64, 64), dtype=np.uint8)
     output = compose_text(text_mask, [])
     assert output.shape == (64, 64, 3)
-    assert np.all(output == 0)
+    assert np.all(output == 255)
 
 
 def test_compose_zero_size_text_mask():
@@ -175,6 +179,7 @@ def test_compose_zero_size_text_mask():
 
 def test_compose_partially_out_of_bounds_bbox():
     text_mask = np.zeros((64, 64), dtype=np.uint8)
+    text_mask[32:64, 32:64] = 255
     patch = Patch("p", "basin", np.full((32, 32, 3), 200, dtype=np.uint8), {})
     stroke_mask = np.ones((32, 32), dtype=np.uint8)
     # BBox extends beyond the canvas on the right and bottom.
@@ -192,4 +197,4 @@ def test_compose_fully_out_of_bounds_bbox():
     stroke = Stroke(0, (64, 64, 96, 96), stroke_mask)
     output = compose_text(text_mask, [(stroke, patch)])
     assert output.shape == (64, 64, 3)
-    assert np.all(output == 0)
+    assert np.all(output == 255)

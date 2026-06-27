@@ -87,11 +87,11 @@ def compose_text(
 ) -> np.ndarray:
     """Compose the final mosaic.
 
-    - `text_mask` is used only to determine the output canvas dimensions (H, W).
-      Its pixel values are not used as a mask during composition.
+    - `text_mask` determines the output canvas dimensions (H, W) and provides the
+      filled stroke region for each stroke bbox.
     - For each (stroke, patch) pair, place the resized patch into the stroke bbox.
-    - Use the stroke mask (resized to bbox size) to generate a feather alpha and
-      alpha-blend the patch over a black canvas.
+    - The filled stroke region from `text_mask` (resized to bbox size) is used to
+      generate a feather alpha and alpha-blend the patch over a black canvas.
     - Clip the canvas to [0, 255] and convert to uint8.
     - If `tone_reference` is provided, resize it to (W, H) and apply
       `match_histograms(canvas, tone_reference)` so the output has a consistent tone.
@@ -99,7 +99,7 @@ def compose_text(
     if text_mask.ndim != 2:
         raise ValueError("text_mask must be a 2D array")
     h, w = text_mask.shape
-    canvas = np.zeros((h, w, 3), dtype=np.float32)
+    canvas = np.full((h, w, 3), 255.0, dtype=np.float32)
 
     for stroke, patch in stroke_matches:
         ymin, xmin, ymax, xmax = stroke.bbox
@@ -114,26 +114,30 @@ def compose_text(
         if resized_patch.ndim == 2:
             resized_patch = np.stack([resized_patch] * 3, axis=-1)
 
-        resized_mask = cv2.resize(
-            (stroke.mask > 0).astype(np.uint8),
-            (target_w, target_h),
-            interpolation=cv2.INTER_NEAREST,
-        )
-        alpha = _feather_mask(resized_mask)
+        # Use the filled stroke region from the full text mask so the patch fills
+        # the entire stroke, not just the thin skeleton stored on stroke.mask.
+        y0 = max(ymin, 0)
+        y1 = min(ymax, h)
+        x0 = max(xmin, 0)
+        x1 = min(xmax, w)
+        if y1 <= y0 or x1 <= x0:
+            continue
+        filled_mask = (text_mask[y0:y1, x0:x1] > 0).astype(np.uint8)
+        if filled_mask.sum() == 0:
+            continue
+        alpha = _feather_mask(filled_mask)
         alpha = alpha[:, :, np.newaxis]
 
-        roi = canvas[ymin:ymax, xmin:xmax]
-        roi_h, roi_w = roi.shape[:2]
-        if roi_h <= 0 or roi_w <= 0:
-            continue
-
-        # Crop patch and alpha to the actual in-bounds ROI when a bbox extends
+        # Crop the resized patch to the actual in-bounds ROI when a bbox extends
         # past the canvas edges.
-        if roi_h != target_h or roi_w != target_w:
-            resized_patch = resized_patch[:roi_h, :roi_w]
-            alpha = alpha[:roi_h, :roi_w]
+        crop_top = y0 - ymin
+        crop_left = x0 - xmin
+        crop_bottom = crop_top + (y1 - y0)
+        crop_right = crop_left + (x1 - x0)
+        resized_patch = resized_patch[crop_top:crop_bottom, crop_left:crop_right]
 
-        canvas[ymin:ymax, xmin:xmax] = alpha * resized_patch + (1.0 - alpha) * roi
+        roi = canvas[y0:y1, x0:x1]
+        canvas[y0:y1, x0:x1] = alpha * resized_patch + (1.0 - alpha) * roi
 
     canvas = np.clip(canvas, 0, 255).astype(np.uint8)
 
