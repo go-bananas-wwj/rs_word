@@ -9,6 +9,7 @@ PATCH_BANK_DIR = DATA_DIR / "patch_bank"
 CACHE_DIR = DATA_DIR / "cache"
 OUTPUT_DIR = DATA_DIR / "outputs"
 FONT_DIR = DATA_DIR / "fonts"
+WEB_DIR = ROOT / "web"
 
 CHIP_SIZE = 256
 CHIP_SIZE_METERS = 2560  # 256 px @ 10 m/px

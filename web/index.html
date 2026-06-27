@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>河流汉字</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <main>
+        <h1>用长江、黄河、珠江的卫星影像拼出汉字</h1>
+        <form id="create-form">
+            <label for="text-input">输入汉字</label>
+            <input id="text-input" name="text" type="text" maxlength="10" placeholder="输入汉字" required>
+            <button type="submit">生成</button>
+        </form>
+        <div id="result"></div>
+    </main>
+
+    <script>
+        const form = document.getElementById('create-form');
+        const result = document.getElementById('result');
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            result.innerHTML = '<p>生成中，请稍候…</p>';
+
+            const formData = new FormData(form);
+            try {
+                const response = await fetch('/api/create', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || `请求失败：${response.status}`);
+                }
+
+                const data = await response.json();
+                result.innerHTML = `
+                    <img src="${data.image}" alt="生成的河流汉字">
+                    <h2>元数据</h2>
+                    <pre>${JSON.stringify(data.meta, null, 2)}</pre>
+                `;
+            } catch (err) {
+                result.innerHTML = `<p class="error">错误：${err.message}</p>`;
+            }
+        });
+    </script>
+</body>
+</html>
