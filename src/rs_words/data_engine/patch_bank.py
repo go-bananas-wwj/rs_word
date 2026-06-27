@@ -36,7 +36,11 @@ class PatchBank:
         patches = []
 
         # Support raw_dir being either a parent of basin directories or a single basin.
-        if any(raw_dir.glob("*.png")):
+        img_exts = {".png", ".jpg", ".jpeg"}
+        if any(
+            p.is_file() and p.suffix.lower() in img_exts
+            for p in raw_dir.iterdir()
+        ):
             basin_dirs = [raw_dir]
         else:
             basin_dirs = [d for d in sorted(raw_dir.iterdir()) if d.is_dir()]
@@ -45,7 +49,11 @@ class PatchBank:
             for basin_dir in basin_dirs:
                 out_basin_dir = output_dir / basin_dir.name
                 out_basin_dir.mkdir(exist_ok=True)
-                for img_path in sorted(basin_dir.glob("*.png")):
+                img_paths = sorted(
+                    p for p in basin_dir.iterdir()
+                    if p.is_file() and p.suffix.lower() in img_exts
+                )
+                for img_path in img_paths:
                     meta_path = basin_dir / f"{img_path.stem}.json"
                     if not meta_path.exists():
                         continue
