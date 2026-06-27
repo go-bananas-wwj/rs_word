@@ -35,6 +35,7 @@ rs-words = "rs_words.cli:app"
 
 [tool.ruff.lint.extend-per-file-ignores]
 "scripts/build_patch_bank.py" = ["E402"]
+"scripts/build_water_masks.py" = ["E402"]
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]

@@ -35,6 +35,8 @@ def download_rivers_for_basin(
     """从 OSM 下载指定流域的河流线，保存为 GeoJSON。"""
     output_dir.mkdir(parents=True, exist_ok=True)
     out_path = output_dir / f"{basin_name}_rivers.geojson"
+    if out_path.exists():
+        return out_path
 
     tags = {"waterway": ["river", "stream"]}
     gdf = ox.features.features_from_bbox(bbox=bbox, tags=tags)
