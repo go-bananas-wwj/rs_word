@@ -1,18 +1,16 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Dict, List, Tuple
 
 import geopandas as gpd
-import numpy as np
 import osmnx as ox
 import pandas as pd
 import pyproj
 from shapely.geometry import LineString, MultiLineString
 from shapely.ops import transform
 
-from rs_words.config import BASINS, OSM_DIR, SEGMENT_LENGTH_METERS
+from rs_words.config import OSM_DIR, SEGMENT_LENGTH_METERS
 
 
 def _to_utm(geom, lat: float, lon: float):
@@ -49,7 +47,7 @@ def download_rivers_for_basin(
 
 def segment_line(line: LineString, segment_length_m: float) -> List[LineString]:
     """将一条 LineString 等距分段。"""
-    if line.length == 0:
+    if line.is_empty or line.length <= 1e-12:
         return []
     lat, lon = line.centroid.y, line.centroid.x
     line_utm, crs = _to_utm(line, lat, lon)
