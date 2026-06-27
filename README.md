@@ -1,0 +1,93 @@
+# rs-words · 用真实河流卫星影像拼出汉字
+
+> 将中国河流（长江、黄河、珠江等）的卫星影像切片拼成 CJK 文字的艺术生成工具。
+
+## 项目背景 / 灵感
+
+本项目受到 NASA "Your Name in Landsat" 与 NODA "天地画布 · AI 生花" 的启发：把真实的地球遥感影像当作"像素"，拼出具有地理意义的汉字。河流的蜿蜒形态天然接近汉字的笔画，因此我们从 OpenStreetMap 提取主要流域矢量，从 Microsoft Planetary Computer 获取 Sentinel-2 / Landsat 卫星影像，再按笔画相似度拼接成最终作品。
+
+## 快速开始
+
+```bash
+# 1. 安装（含开发依赖）
+pip install -e ".[dev]"
+
+# 2. 准备一款 CJK 字体（例如思源黑体）
+mkdir -p data/fonts
+cp /path/to/SourceHanSansCN-Regular.otf data/fonts/
+
+# 3. 构建卫星影像切片库（需要流域 OSM 数据与 Planetary Computer 访问，耗时较长）
+make build-bank
+
+# 4. 生成河流汉字
+rs-words create "河" --output data/outputs/河.png --meta data/outputs/河.json
+
+# 5. 启动网页 Demo
+make run-web
+```
+
+网页服务默认运行在 <http://localhost:8000>，提交文字后可在浏览器中直接预览并下载结果。
+
+## 数据目录
+
+项目使用以下目录存放数据与结果，这些目录均已被 `.gitignore` 排除，不会提交到仓库：
+
+| 目录 | 用途 |
+|---|---|
+| `data/osm/` | 从 OpenStreetMap 下载的河流流域矢量数据 |
+| `data/satellite_chips/raw/` | 从 Planetary Computer 下载的原始卫星影像切片 |
+| `data/patch_bank/` | 构建完成的影像切片库及其元数据 |
+| `data/outputs/` | 生成的汉字图片与 JSON 元数据 |
+| `data/fonts/` | 用户自备的 CJK 字体文件 |
+
+## 开发
+
+```bash
+make test
+# 等价于
+pytest -v
+```
+
+## 命令行用法
+
+```bash
+rs-words create [OPTIONS] TEXT
+```
+
+主要选项：
+
+| 选项 | 说明 | 默认值 |
+|---|---|---|
+| `TEXT` | 要渲染的中文文本（位置参数） | - |
+| `-o, --output PATH` | 输出图片路径 | `data/outputs/out.png` |
+| `--meta PATH` | 输出元数据 JSON 路径 | 无 |
+| `--font PATH` | CJK 字体路径 | `data/fonts/` 下可用字体 |
+| `--patch-bank PATH` | 切片库目录 | `data/patch_bank/` |
+| `--font-size INT` | 渲染字号 | `256` |
+| `--k INT` | 每个笔画候选匹配数量 | `5` |
+| `--help` | 显示帮助信息 | - |
+
+示例：
+
+```bash
+rs-words create "长江" \
+  --font data/fonts/SourceHanSansCN-Regular.otf \
+  --output data/outputs/长江.png \
+  --meta data/outputs/长江.json \
+  --font-size 512
+```
+
+## 网页 Demo
+
+```bash
+make run-web
+```
+
+启动 FastAPI 服务（默认 `0.0.0.0:8000`），访问首页即可在表单中输入文字并提交。后端通过 `/api/create` 端点调用与 CLI 相同的生成逻辑，返回 PNG 的 Base64 编码及对应元数据。
+
+## 许可与来源
+
+- **卫星影像**：通过 [Microsoft Planetary Computer](https://planetarycomputer.microsoft.com/) 获取，使用公共数据资产（Sentinel-2、Landsat 等，需遵守各数据原始许可）。
+- **河流矢量**：源自 [OpenStreetMap](https://www.openstreetmap.org/)，遵循 [ODbL](https://opendatacommons.org/licenses/odbl/) 开放数据库许可。
+- **字体**：由用户自行提供，请确保拥有合法使用授权。
+- **本项目代码**：MIT 许可。
