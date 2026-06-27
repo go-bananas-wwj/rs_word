@@ -4,6 +4,7 @@ from rs_words.compositor import (
     _build_lut,
     _feather_mask,
     _resize_patch,
+    compose_connected_text,
     compose_text,
     match_histograms,
 )
@@ -198,3 +199,21 @@ def test_compose_fully_out_of_bounds_bbox():
     output = compose_text(text_mask, [(stroke, patch)])
     assert output.shape == (64, 64, 3)
     assert np.all(output == 255)
+
+
+def test_compose_connected_text_fills_whole_mask():
+    text_mask = np.zeros((120, 180), dtype=np.uint8)
+    text_mask[30:90, 40:140] = 255
+    patch_image = np.zeros((80, 80, 3), dtype=np.uint8)
+    patch_image[:, :] = [40, 140, 180]
+    patch = Patch("water", "basin", patch_image, {"river_metrics": {"water_fraction": 0.2, "skeleton_length_px": 20}})
+    bank = type("B", (), {"patches": [patch]})()
+
+    output = compose_connected_text(text_mask, bank)
+
+    assert output.shape == (120, 180, 3)
+    assert output.dtype == np.uint8
+    assert not np.all(output == output[0, 0])
+    inside = output[40:80, 60:120].astype(np.float32)
+    outside = output[0:20, 0:20].astype(np.float32)
+    assert np.linalg.norm(inside.mean(axis=(0, 1)) - outside.mean(axis=(0, 1))) > 20

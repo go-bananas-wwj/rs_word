@@ -178,6 +178,99 @@ def compose_text(
     return canvas
 
 
+
+def _smooth_text_mask(text_mask: np.ndarray, close_radius: int = 5) -> np.ndarray:
+    if text_mask.ndim != 2:
+        raise ValueError("text_mask must be a 2D array")
+    binary = (text_mask > 0).astype(np.uint8) * 255
+    if binary.size == 0 or binary.sum() == 0:
+        return binary
+    radius = max(int(close_radius), 0)
+    if radius == 0:
+        return binary
+    kernel_size = radius * 2 + 1
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+    closed = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
+    opened = cv2.morphologyEx(closed, cv2.MORPH_OPEN, kernel)
+    return opened
+
+
+def _best_texture_patch(bank: PatchBank) -> Patch:
+    if not bank.patches:
+        raise ValueError("patch bank is empty")
+
+    def quality(patch: Patch) -> tuple[float, float]:
+        metrics = patch.meta.get("river_metrics") or {}
+        water_fraction = float(metrics.get("water_fraction", 0.0) or 0.0)
+        skeleton_length = float(metrics.get("skeleton_length_px", 0.0) or 0.0)
+        # Prefer visible water without choosing masks that are nearly all water.
+        balance = 1.0 - min(abs(water_fraction - 0.18), 0.18) / 0.18 if water_fraction else 0.0
+        return (balance, skeleton_length)
+
+    return max(bank.patches, key=quality)
+
+
+def _cover_resize(image: np.ndarray, target_w: int, target_h: int) -> np.ndarray:
+    h, w = image.shape[:2]
+    if target_w <= 0 or target_h <= 0 or h <= 0 or w <= 0:
+        return np.empty((max(target_h, 0), max(target_w, 0), 3), dtype=np.float32)
+    scale = max(target_w / w, target_h / h)
+    resized_w = max(int(round(w * scale)), target_w)
+    resized_h = max(int(round(h * scale)), target_h)
+    resized = cv2.resize(image, (resized_w, resized_h), interpolation=cv2.INTER_CUBIC)
+    x0 = (resized_w - target_w) // 2
+    y0 = (resized_h - target_h) // 2
+    return resized[y0 : y0 + target_h, x0 : x0 + target_w].astype(np.float32)
+
+
+def compose_connected_text(
+    text_mask: np.ndarray,
+    bank: PatchBank,
+    close_radius: int = 5,
+    background: tuple[int, int, int] = (246, 246, 240),
+    outline_color: tuple[int, int, int] = (18, 72, 82),
+    outline_alpha: float = 0.18,
+) -> np.ndarray:
+    """Render the whole glyph as one connected, texture-filled river-word shape.
+
+    This mode intentionally avoids per-stroke tiles. It smooths the glyph mask,
+    chooses one high-quality texture patch, covers the full canvas with that texture,
+    and clips it through a feathered whole-character mask. The result is closer to
+    river-logo typography: connected strokes, one visual tone, and no rectangular seams.
+    """
+    if text_mask.ndim != 2:
+        raise ValueError("text_mask must be a 2D array")
+    h, w = text_mask.shape
+    canvas = np.full((h, w, 3), np.array(background, dtype=np.float32), dtype=np.float32)
+    if h == 0 or w == 0:
+        return canvas.astype(np.uint8)
+    smooth_mask = _smooth_text_mask(text_mask, close_radius=close_radius)
+    if smooth_mask.sum() == 0:
+        return canvas.astype(np.uint8)
+
+    patch = _best_texture_patch(bank)
+    texture = _cover_resize(patch.image, w, h)
+    if texture.ndim == 2:
+        texture = np.stack([texture] * 3, axis=-1)
+
+    # Slightly cool the texture so it reads more like water typography than raw tiles.
+    tint = np.array([0.86, 1.02, 1.08], dtype=np.float32)
+    texture = np.clip(texture * tint, 0, 255)
+
+    alpha = _feather_mask(smooth_mask)
+    alpha = np.clip(alpha * 1.25, 0, 1)[..., None]
+    canvas = canvas * (1 - alpha) + texture * alpha
+
+    contours, _ = cv2.findContours(smooth_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    outline = np.zeros((h, w), dtype=np.uint8)
+    cv2.drawContours(outline, contours, -1, 255, thickness=max(close_radius // 2, 1), lineType=cv2.LINE_AA)
+    outline_a = (outline.astype(np.float32) / 255.0 * outline_alpha)[..., None]
+    outline_rgb = np.array(outline_color, dtype=np.float32)
+    canvas = canvas * (1 - outline_a) + outline_rgb * outline_a
+
+    return np.clip(canvas, 0, 255).astype(np.uint8)
+
+
 def compose_grid(
     text_mask: np.ndarray,
     bank: PatchBank,
