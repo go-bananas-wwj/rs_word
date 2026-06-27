@@ -15,7 +15,6 @@ from rasterio.windows import from_bounds
 from shapely.geometry import LineString, mapping
 
 from rs_words.config import (
-    CHIP_SIZE,
     CHIP_SIZE_METERS,
     PC_ASSET_KEYS,
     PC_CLOUD_COVER_LT,
@@ -23,7 +22,6 @@ from rs_words.config import (
     PC_COLLECTION_SENTINEL,
     PC_DATETIME_RANGE,
     PC_FALLBACK_MAX_ITEMS,
-    PC_STAC_URL,
     SATELLITE_DIR,
 )
 
