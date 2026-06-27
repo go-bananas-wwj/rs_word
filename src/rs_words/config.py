@@ -1,7 +1,9 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-DATA_DIR = ROOT / "data"
+# All project data (OSM, satellite chips, patch bank, outputs, fonts) lives outside
+# the repository so large files are never accidentally committed.
+DATA_DIR = Path("/data/rs_word")
 
 OSM_DIR = DATA_DIR / "osm"
 SATELLITE_DIR = DATA_DIR / "satellite_chips" / "raw"

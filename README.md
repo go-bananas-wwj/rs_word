@@ -13,14 +13,17 @@
 pip install -e ".[dev]"
 
 # 2. 准备一款 CJK 字体（例如思源黑体）
-mkdir -p data/fonts
-cp /path/to/SourceHanSansCN-Regular.otf data/fonts/
+mkdir -p /data/rs_word/fonts
+cp /path/to/SourceHanSansCN-Regular.otf /data/rs_word/fonts/
 
 # 3. 构建卫星影像切片库（需要流域 OSM 数据与 Planetary Computer 访问，耗时较长）
 make build-bank
 
-# 4. 生成河流汉字
-rs-words create "河" --output data/outputs/河.png --meta data/outputs/河.json
+# 4. 生成河流汉字（输出为遥感影像切片的拼贴）
+rs-words create "河" \
+  --font /data/rs_word/fonts/SourceHanSansCN-Regular.otf \
+  --output /data/rs_word/outputs/河.png \
+  --meta /data/rs_word/outputs/河.json
 
 # 5. 启动网页 Demo
 make run-web
@@ -30,15 +33,15 @@ make run-web
 
 ## 数据目录
 
-项目使用以下目录存放数据与结果，这些目录均已被 `.gitignore` 排除，不会提交到仓库：
+所有大文件统一存放在 `/data/rs_word/`，与代码仓库分离，避免误提交：
 
 | 目录 | 用途 |
 |---|---|
-| `data/osm/` | 从 OpenStreetMap 下载的河流流域矢量数据 |
-| `data/satellite_chips/raw/` | 从 Planetary Computer 下载的原始卫星影像切片 |
-| `data/patch_bank/` | 构建完成的影像切片库及其元数据 |
-| `data/outputs/` | 生成的汉字图片与 JSON 元数据 |
-| `data/fonts/` | 用户自备的 CJK 字体文件 |
+| `/data/rs_word/osm/` | 从 OpenStreetMap 下载的河流流域矢量数据 |
+| `/data/rs_word/satellite_chips/raw/` | 从 Planetary Computer 下载的原始卫星影像切片 |
+| `/data/rs_word/patch_bank/` | 构建完成的影像切片库及其元数据 |
+| `/data/rs_word/outputs/` | 生成的汉字图片与 JSON 元数据 |
+| `/data/rs_word/fonts/` | 用户自备的 CJK 字体文件 |
 
 ## 开发
 
@@ -59,10 +62,10 @@ rs-words create [OPTIONS] TEXT
 | 选项 | 说明 | 默认值 |
 |---|---|---|
 | `TEXT` | 要渲染的中文文本（位置参数） | - |
-| `-o, --output PATH` | 输出图片路径 | `data/outputs/out.png` |
+| `-o, --output PATH` | 输出图片路径 | `/data/rs_word/outputs/out.png` |
 | `--meta PATH` | 输出元数据 JSON 路径 | 无 |
-| `--font PATH` | CJK 字体路径 | `data/fonts/` 下可用字体 |
-| `--patch-bank PATH` | 切片库目录 | `data/patch_bank/` |
+| `--font PATH` | CJK 字体路径 | `/data/rs_word/fonts/` 下可用字体 |
+| `--patch-bank PATH` | 切片库目录 | `/data/rs_word/patch_bank/` |
 | `--font-size INT` | 渲染字号 | `256` |
 | `--k INT` | 每个笔画候选匹配数量 | `5` |
 | `--help` | 显示帮助信息 | - |
@@ -71,9 +74,9 @@ rs-words create [OPTIONS] TEXT
 
 ```bash
 rs-words create "长江" \
-  --font data/fonts/SourceHanSansCN-Regular.otf \
-  --output data/outputs/长江.png \
-  --meta data/outputs/长江.json \
+  --font /data/rs_word/fonts/SourceHanSansCN-Regular.otf \
+  --output /data/rs_word/outputs/长江.png \
+  --meta /data/rs_word/outputs/长江.json \
   --font-size 512
 ```
 

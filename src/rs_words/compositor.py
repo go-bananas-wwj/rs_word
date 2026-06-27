@@ -85,13 +85,12 @@ def compose_text(
     stroke_matches: List[Tuple[Stroke, Patch]],
     tone_reference: Optional[np.ndarray] = None,
 ) -> np.ndarray:
-    """Compose the final mosaic.
+    """Compose a collage mosaic from stroke-to-patch matches.
 
-    - `text_mask` determines the output canvas dimensions (H, W) and provides the
-      filled stroke region for each stroke bbox.
-    - For each (stroke, patch) pair, place the resized patch into the stroke bbox.
-    - The filled stroke region from `text_mask` (resized to bbox size) is used to
-      generate a feather alpha and alpha-blend the patch over a black canvas.
+    - `text_mask` is used only to determine the output canvas dimensions (H, W).
+    - For each (stroke, patch) pair, the full patch image is resized to the stroke
+      bbox and pasted directly onto a white canvas. No stroke-shaped mask is
+      applied, so the resulting mosaic is an arrangement of satellite image tiles.
     - Clip the canvas to [0, 255] and convert to uint8.
     - If `tone_reference` is provided, resize it to (W, H) and apply
       `match_histograms(canvas, tone_reference)` so the output has a consistent tone.
@@ -114,19 +113,12 @@ def compose_text(
         if resized_patch.ndim == 2:
             resized_patch = np.stack([resized_patch] * 3, axis=-1)
 
-        # Use the filled stroke region from the full text mask so the patch fills
-        # the entire stroke, not just the thin skeleton stored on stroke.mask.
         y0 = max(ymin, 0)
         y1 = min(ymax, h)
         x0 = max(xmin, 0)
         x1 = min(xmax, w)
         if y1 <= y0 or x1 <= x0:
             continue
-        filled_mask = (text_mask[y0:y1, x0:x1] > 0).astype(np.uint8)
-        if filled_mask.sum() == 0:
-            continue
-        alpha = _feather_mask(filled_mask)
-        alpha = alpha[:, :, np.newaxis]
 
         # Crop the resized patch to the actual in-bounds ROI when a bbox extends
         # past the canvas edges.
@@ -136,8 +128,7 @@ def compose_text(
         crop_right = crop_left + (x1 - x0)
         resized_patch = resized_patch[crop_top:crop_bottom, crop_left:crop_right]
 
-        roi = canvas[y0:y1, x0:x1]
-        canvas[y0:y1, x0:x1] = alpha * resized_patch + (1.0 - alpha) * roi
+        canvas[y0:y1, x0:x1] = resized_patch
 
     canvas = np.clip(canvas, 0, 255).astype(np.uint8)
 

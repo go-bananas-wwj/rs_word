@@ -28,6 +28,7 @@ def create(
 ) -> None:
     """Render Chinese text as a river satellite-image mosaic."""
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    output.parent.mkdir(parents=True, exist_ok=True)
 
     typer.echo(f"Rendering and decomposing text: {text!r}")
     mask, strokes = decompose_text(text, font_path=font_path, font_size=font_size)
