@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Data directories: large files must NOT be committed
+data/osm/
+data/satellite_chips/
+data/patch_bank/
+data/cache/
+data/outputs/
+data/fonts/*.otf
+data/fonts/*.ttf
+data/fonts/*.ttc
+
+.env
+.venv/
+venv/
+
+.vscode/
+.idea/
