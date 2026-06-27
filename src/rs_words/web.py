@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import base64
 import json
-import re
-from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -53,8 +51,8 @@ def create_api(text: str = Form(...), font_size: int = Form(256)):
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    image_bytes = Path(output).read_bytes()
+    image_bytes = output.read_bytes()
     encoded = base64.b64encode(image_bytes).decode("ascii")
-    meta = json.loads(Path(meta_output).read_text(encoding="utf-8"))
+    meta = json.loads(meta_output.read_text(encoding="utf-8"))
 
     return JSONResponse({"image": f"data:image/png;base64,{encoded}", "meta": meta})
