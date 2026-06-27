@@ -35,6 +35,44 @@ def _feather_mask(mask: np.ndarray) -> np.ndarray:
     return dt / max_dt
 
 
+def _stroke_angle(mask: np.ndarray) -> float:
+    """Return the principal axis angle of a binary mask in degrees."""
+    ys, xs = np.where(mask > 0)
+    if len(xs) < 2:
+        return 0.0
+    cov = np.cov(xs, ys)
+    eigvals, eigvecs = np.linalg.eigh(cov)
+    vec = eigvecs[:, np.argmax(eigvals)]
+    return np.degrees(np.arctan2(vec[1], vec[0]))
+
+
+def _zoom_crop_patch(patch_image: np.ndarray, stroke_mask: np.ndarray, zoom: float = 3.0) -> np.ndarray:
+    """Crop a center band around the river and upscale so the river fills more of the stroke.
+
+    The stroke mask's principal angle tells us whether the stroke (and therefore the
+    river in the patch) runs roughly horizontally or vertically. We then crop the
+    patch perpendicular to that direction and resize back to the original patch size,
+    producing a digital zoom that makes the river width occupy a larger share of the tile.
+    """
+    h, w = patch_image.shape[:2]
+    angle = abs(_stroke_angle(stroke_mask))
+    if angle > 90:
+        angle = 180 - angle
+
+    # Horizontal-ish stroke: the river runs left-right, so crop a vertical band.
+    if angle <= 45:
+        crop_h = max(int(h / zoom), 1)
+        y0 = (h - crop_h) // 2
+        cropped = patch_image[y0 : y0 + crop_h, :, ...]
+    else:
+        # Vertical-ish stroke: the river runs top-bottom, so crop a horizontal band.
+        crop_w = max(int(w / zoom), 1)
+        x0 = (w - crop_w) // 2
+        cropped = patch_image[:, x0 : x0 + crop_w, ...]
+
+    return cv2.resize(cropped, (w, h), interpolation=cv2.INTER_AREA)
+
+
 def _build_lut(template_channel: np.ndarray, source_channel: np.ndarray) -> np.ndarray:
     """Build a 256-entry LUT for histogram matching from source to template."""
     template_flat = template_channel.ravel()
@@ -88,9 +126,10 @@ def compose_text(
     """Compose a collage mosaic from stroke-to-patch matches.
 
     - `text_mask` is used only to determine the output canvas dimensions (H, W).
-    - For each (stroke, patch) pair, the full patch image is resized to the stroke
-      bbox and pasted directly onto a white canvas. No stroke-shaped mask is
-      applied, so the resulting mosaic is an arrangement of satellite image tiles.
+    - For each (stroke, patch) pair, the patch is first zoom-cropped around the
+      river so the river fills more of the tile, then resized to the stroke bbox
+      and pasted directly onto a white canvas. No stroke-shaped mask is applied,
+      so the resulting mosaic is an arrangement of zoomed satellite image tiles.
     - Clip the canvas to [0, 255] and convert to uint8.
     - If `tone_reference` is provided, resize it to (W, H) and apply
       `match_histograms(canvas, tone_reference)` so the output has a consistent tone.
@@ -107,7 +146,8 @@ def compose_text(
         target_w = xmax - xmin
         target_h = ymax - ymin
 
-        resized_patch = _resize_patch(patch.image, target_w, target_h)
+        zoomed_patch = _zoom_crop_patch(patch.image, stroke.mask, zoom=3.0)
+        resized_patch = _resize_patch(zoomed_patch, target_w, target_h)
         if resized_patch.size == 0:
             continue
         if resized_patch.ndim == 2:
