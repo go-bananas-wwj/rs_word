@@ -8,7 +8,7 @@ from __future__ import annotations
 import argparse
 import logging
 import random
-from typing import List, Tuple
+from typing import Iterable, List, Tuple
 
 import geopandas as gpd
 import pystac_client
@@ -55,10 +55,49 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Write RGB PNG previews when downloading four-band GeoTIFF chips.",
     )
+    parser.add_argument(
+        "--max-total",
+        type=int,
+        default=MAX_TOTAL_CHIPS,
+        help="Maximum chips to download across all areas.",
+    )
+    parser.add_argument(
+        "--max-per-area",
+        type=int,
+        default=MAX_CHIPS_PER_AREA,
+        help="Maximum chips to download from each sampling area.",
+    )
+    parser.add_argument(
+        "--max-candidates-per-area",
+        type=int,
+        default=MAX_CANDIDATE_SEGMENTS_PER_AREA,
+        help="Maximum candidate river segments retained per area before STAC searches.",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for reproducible segment sampling.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Build and save the segment catalog without opening STAC or downloading chips.",
+    )
     return parser.parse_args()
 
 
-def _collect_segments_for_area(name: str, bbox: tuple) -> List[dict]:
+def _positive_limit(value: int, name: str) -> int:
+    if value < 1:
+        raise ValueError(f"{name} must be >= 1")
+    return value
+
+
+def _selected_areas(areas: Iterable[Tuple[str, Tuple[float, float, float, float]]]) -> list[Tuple[str, Tuple[float, float, float, float]]]:
+    return list(areas)
+
+
+def _collect_segments_for_area(name: str, bbox: tuple, max_candidates: int, rng: random.Random) -> List[dict]:
     """Download OSM rivers for a small area and segment them with prefixed IDs."""
     river_path = download_rivers_for_basin(name, bbox, output_dir=OSM_DIR)
     gdf = gpd.read_file(river_path)
@@ -85,22 +124,28 @@ def _collect_segments_for_area(name: str, bbox: tuple) -> List[dict]:
                     }
                 )
 
-    random.shuffle(rows)
-    if len(rows) > MAX_CANDIDATE_SEGMENTS_PER_AREA:
-        rows = rows[:MAX_CANDIDATE_SEGMENTS_PER_AREA]
+    rng.shuffle(rows)
+    if len(rows) > max_candidates:
+        rows = rows[:max_candidates]
     return rows
 
 
 def main() -> None:
     args = parse_args()
+    max_total = _positive_limit(args.max_total, "--max-total")
+    max_per_area = _positive_limit(args.max_per_area, "--max-per-area")
+    max_candidates = _positive_limit(args.max_candidates_per_area, "--max-candidates-per-area")
+    rng = random.Random(args.seed)
+
     OSM_DIR.mkdir(parents=True, exist_ok=True)
     SATELLITE_DIR.mkdir(parents=True, exist_ok=True)
 
     all_rows = []
-    for name, bbox in AREAS:
+    areas = _selected_areas(AREAS)
+    for name, bbox in areas:
         logger.info("Collecting segments for %s ...", name)
         try:
-            rows = _collect_segments_for_area(name, bbox)
+            rows = _collect_segments_for_area(name, bbox, max_candidates=max_candidates, rng=rng)
         except Exception as exc:
             logger.warning("Failed to collect segments for %s: %s", name, exc)
             continue
@@ -115,17 +160,27 @@ def main() -> None:
     segments_path = OSM_DIR / "diverse_segments.geojson"
     segments_gdf.to_file(segments_path, driver="GeoJSON")
     logger.info("Saved combined segment catalog with %d segments to %s", len(segments_gdf), segments_path)
+    logger.info(
+        "Run limits: max_total=%d, max_per_area=%d, max_candidates_per_area=%d, seed=%d",
+        max_total,
+        max_per_area,
+        max_candidates,
+        args.seed,
+    )
+    if args.dry_run:
+        logger.info("Dry run requested; skipping STAC search, downloads, and patch bank rebuild.")
+        return
 
     logger.info("Opening Planetary Computer catalog ...")
     catalog = pystac_client.Client.open(PC_STAC_URL)
 
     downloaded = 0
-    per_area_counts = {name: 0 for name, _ in AREAS}
+    per_area_counts = {name: 0 for name, _ in areas}
     for _, row in segments_gdf.iterrows():
-        if downloaded >= MAX_TOTAL_CHIPS:
+        if downloaded >= max_total:
             break
         area = row["basin"]
-        if per_area_counts[area] >= MAX_CHIPS_PER_AREA:
+        if per_area_counts[area] >= max_per_area:
             continue
         try:
             result = download_chip(
@@ -139,7 +194,7 @@ def main() -> None:
             if result:
                 downloaded += 1
                 per_area_counts[area] += 1
-                logger.info("Downloaded %s (%d/%d)", result, downloaded, MAX_TOTAL_CHIPS)
+                logger.info("Downloaded %s (%d/%d)", result, downloaded, max_total)
         except Exception as exc:
             logger.warning("Failed to download %s: %s", row["segment_id"], exc)
 

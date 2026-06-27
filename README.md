@@ -41,7 +41,7 @@ make run-web
 
 ```bash
 # 1. 下载多区域 Sentinel-2 四波段 GeoTIFF，同时写 RGB 预览
-python scripts/build_diverse_patch_bank.py --format geotiff4 --rgb-preview
+python scripts/build_diverse_patch_bank.py --format geotiff4 --rgb-preview --max-total 30 --max-per-area 6
 
 # 2. 用公开水体分割模型生成 mask（需要先在 rs_words Conda 环境安装/配置 OmniWaterMask）
 python scripts/build_water_masks.py --backend omniwatermask --patch-bank /data/rs_word/patch_bank
@@ -59,6 +59,8 @@ rs-words create "河" \
   --output /data/rs_word/outputs/河_stroke.png \
   --meta /data/rs_word/outputs/河_stroke.json
 ```
+
+小规模试验时优先使用 `--max-total` 和 `--max-per-area` 控制下载量；确认样本质量后再扩大规模。`--dry-run` 可以只生成 segment catalog，不访问 STAC 或下载影像。
 
 `build_water_masks.py` 会把 mask 写入 `/data/rs_word/water_masks/`，并把 `water_mask_path`、`mask_backend`、`river_metrics` 写回 patch bank metadata。`RiverMatcher` 会优先使用这些 mask；没有 mask 的旧数据仍会回退到 RGB 边缘匹配。
 
