@@ -54,6 +54,9 @@ def _build_lut(template_channel: np.ndarray, source_channel: np.ndarray) -> np.n
     template_cdf_norm = template_cdf / t_total
     source_cdf_norm = source_cdf / s_total
 
+    if np.array_equal(source_cdf_norm, template_cdf_norm):
+        return np.arange(256, dtype=np.uint8)
+
     lut = np.zeros(256, dtype=np.uint8)
     for i in range(256):
         idx = np.searchsorted(template_cdf_norm, source_cdf_norm[i], side="left")

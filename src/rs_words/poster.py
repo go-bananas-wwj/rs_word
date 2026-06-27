@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Optional
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -17,7 +18,7 @@ def create_info_poster(
     mosaic_path: Path,
     meta_path: Path,
     output_path: Path,
-    font_path: Path | None = None,
+    font_path: Optional[Path] = None,
 ) -> Path:
     """Create an information poster for a mosaic.
 

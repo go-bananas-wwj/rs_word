@@ -77,7 +77,7 @@ def main() -> None:
             print(f"    -> saved: {chip_path}")
         else:
             skipped.append(segment_id)
-            print(f"    -> skipped")
+            print("    -> skipped")
     print(f"  Downloaded {len(downloaded)} chips, skipped {len(skipped)} segments.")
 
     print("=" * 60)

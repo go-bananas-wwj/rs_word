@@ -73,10 +73,9 @@ def test_build_lut_empty_image():
 def test_build_lut_constant_image():
     constant = np.full((32, 32), 128, dtype=np.uint8)
     lut = _build_lut(constant, constant)
-    # A constant image has all mass in one bin; the LUT maps lower intensities
-    # to 0 and intensities at/above the constant to the constant itself.
-    expected = np.zeros(256, dtype=np.uint8)
-    expected[128:] = 128
+    # Matching a constant image to itself is degenerate; with equal histograms
+    # the LUT is the identity mapping.
+    expected = np.arange(256, dtype=np.uint8)
     assert np.array_equal(lut, expected)
 
 

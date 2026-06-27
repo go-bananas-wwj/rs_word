@@ -5,7 +5,7 @@ from typing import List, Tuple
 import cv2
 import numpy as np
 
-from rs_words.data_engine.patch_bank import Patch
+from rs_words.data_engine.patch_bank import Patch, PatchBank
 from rs_words.glyph import Stroke
 
 

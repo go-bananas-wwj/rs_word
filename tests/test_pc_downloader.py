@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from shapely.geometry import LineString
 
 from rs_words.data_engine.pc_downloader import _buffer_in_degrees, _segment_center

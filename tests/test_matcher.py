@@ -1,5 +1,4 @@
 import numpy as np
-from PIL import Image
 
 from rs_words.data_engine.patch_bank import Patch
 from rs_words.glyph import Stroke
