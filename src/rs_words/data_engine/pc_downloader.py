@@ -11,6 +11,7 @@ import pystac_client
 import rasterio
 from PIL import Image
 from pystac import ItemCollection
+from rasterio.warp import transform_bounds
 from rasterio.windows import from_bounds
 from shapely.geometry import LineString, mapping
 
@@ -124,10 +125,15 @@ def download_chip(
 
     try:
         with rasterio.open(asset.href) as src:
-            win = from_bounds(*bbox, src.transform)
+            src_bbox = transform_bounds("EPSG:4326", src.crs, *bbox)
+            win = from_bounds(*src_bbox, src.transform)
             data = src.read(window=win)
     except Exception as exc:
         logger.warning("Failed to read raster for %s: %s", segment_id, exc)
+        return None
+
+    if data.size == 0:
+        logger.warning("Empty raster read for %s", segment_id)
         return None
 
     if data.shape[0] >= 3:
