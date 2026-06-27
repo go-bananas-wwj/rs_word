@@ -4,15 +4,13 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 
-# Data directories: large files must NOT be committed
-data/osm/
-data/satellite_chips/
-data/patch_bank/
-data/cache/
-data/outputs/
-data/fonts/*.otf
-data/fonts/*.ttf
-data/fonts/*.ttc
+# Project data lives outside the repo at /data/rs_word
+# Keep the local placeholder empty
+data/
+
+# Runtime caches and planning docs should not be committed
+cache/
+docs/
 
 .env
 .venv/
