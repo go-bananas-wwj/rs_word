@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
+from PIL import Image
 
 from rs_words.data_engine.patch_bank import Patch, PatchBank
 from rs_words.glyph import Stroke
@@ -34,6 +36,76 @@ def _feather_mask(mask: np.ndarray) -> np.ndarray:
     if max_dt <= 0:
         return np.zeros_like(mask, dtype=np.float32)
     return dt / max_dt
+
+
+def _resolve_patch_meta_path(patch: Patch, key: str) -> Path | None:
+    value = patch.meta.get(key)
+    if not value:
+        return None
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    data_root = patch.meta.get("_data_root")
+    if data_root:
+        return Path(data_root) / path
+    return path
+
+
+def _load_patch_water_mask(patch: Patch) -> np.ndarray | None:
+    mask_path = _resolve_patch_meta_path(patch, "water_mask_path")
+    if not mask_path or not mask_path.exists():
+        return None
+    mask = np.array(Image.open(mask_path).convert("L"), dtype=np.uint8)
+    if mask.sum() == 0:
+        return None
+    return mask
+
+
+def _crop_around_mask(
+    image: np.ndarray,
+    mask: np.ndarray,
+    target_w: int,
+    target_h: int,
+    padding: float = 0.35,
+) -> np.ndarray:
+    h, w = image.shape[:2]
+    if target_h <= 0 or target_w <= 0 or h <= 0 or w <= 0:
+        return image
+    if mask.shape[:2] != (h, w):
+        mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
+    ys, xs = np.where(mask > 0)
+    if len(xs) == 0:
+        return _aspect_crop_patch(image, target_w, target_h)
+
+    x0, x1 = int(xs.min()), int(xs.max()) + 1
+    y0, y1 = int(ys.min()), int(ys.max()) + 1
+    box_w = max(x1 - x0, 1)
+    box_h = max(y1 - y0, 1)
+    cx = (x0 + x1) / 2
+    cy = (y0 + y1) / 2
+    target_aspect = target_w / max(target_h, 1)
+
+    crop_w = box_w * (1 + padding)
+    crop_h = box_h * (1 + padding)
+    if crop_w / crop_h < target_aspect:
+        crop_w = crop_h * target_aspect
+    else:
+        crop_h = crop_w / target_aspect
+
+    crop_w = min(max(int(round(crop_w)), 1), w)
+    crop_h = min(max(int(round(crop_h)), 1), h)
+    left = int(round(cx - crop_w / 2))
+    top = int(round(cy - crop_h / 2))
+    left = min(max(left, 0), max(w - crop_w, 0))
+    top = min(max(top, 0), max(h - crop_h, 0))
+    return image[top : top + crop_h, left : left + crop_w, ...]
+
+
+def _stroke_patch_crop(patch: Patch, target_w: int, target_h: int) -> np.ndarray:
+    mask = _load_patch_water_mask(patch)
+    if mask is not None:
+        return _crop_around_mask(patch.image, mask, target_w, target_h)
+    return _aspect_crop_patch(patch.image, target_w, target_h)
 
 
 def _aspect_crop_patch(
@@ -142,7 +214,7 @@ def compose_text(
         target_w = xmax - xmin
         target_h = ymax - ymin
 
-        cropped_patch = _aspect_crop_patch(patch.image, target_w, target_h)
+        cropped_patch = _stroke_patch_crop(patch, target_w, target_h)
         resized_patch = _resize_patch(cropped_patch, target_w, target_h)
         if resized_patch.size == 0:
             continue

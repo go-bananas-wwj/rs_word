@@ -49,3 +49,34 @@ def test_matcher_prefers_water_mask_over_rgb_edges(tmp_path):
 
     assert best.patch_id == "h"
     assert matcher.patch_shape_source(best) == "water_mask"
+
+
+def test_matcher_ignores_rgb_fallback_when_usable_masks_exist(tmp_path):
+    from PIL import Image
+
+    stroke_mask = np.zeros((32, 64), dtype=np.uint8)
+    stroke_mask[14:18, 8:56] = 1
+    stroke = Stroke(0, (0, 0, 32, 64), stroke_mask)
+
+    rgb_patch = Patch("rgb", "basin", np.full((64, 64, 3), 200, dtype=np.uint8), {})
+    rgb_patch.image[28:36, 8:56] = [0, 0, 0]
+
+    mask = np.zeros((64, 64), dtype=np.uint8)
+    mask[28:36, 8:56] = 255
+    mask_path = tmp_path / "mask.png"
+    Image.fromarray(mask).save(mask_path)
+    water_patch = Patch(
+        "water",
+        "basin",
+        np.full((64, 64, 3), 120, dtype=np.uint8),
+        {
+            "water_mask_path": str(mask_path),
+            "river_metrics": {"water_fraction": 0.1, "skeleton_length_px": 12},
+        },
+    )
+    bank = type("B", (), {"patches": [rgb_patch, water_patch]})()
+
+    matcher = RiverMatcher()
+    best, _ = matcher.match(stroke, bank, k=1)[0]
+
+    assert best.patch_id == "water"

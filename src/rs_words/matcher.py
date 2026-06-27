@@ -41,6 +41,19 @@ class RiverMatcher:
             return Path(data_root) / path
         return path
 
+    def water_fraction(self, patch: Patch) -> float:
+        metrics = patch.meta.get("river_metrics") or {}
+        return float(metrics.get("water_fraction", 0.0) or 0.0)
+
+    def has_usable_water_mask(self, patch: Patch, min_water_fraction: float = 0.03) -> bool:
+        mask_path = self._resolve_meta_path(patch, "water_mask_path")
+        if not mask_path or not mask_path.exists():
+            return False
+        metrics = patch.meta.get("river_metrics") or {}
+        skeleton_length = int(metrics.get("skeleton_length_px", 0) or 0)
+        water_fraction = self.water_fraction(patch)
+        return water_fraction >= min_water_fraction and skeleton_length > 0
+
     def patch_shape_source(self, patch: Patch) -> str:
         mask_path = self._resolve_meta_path(patch, "water_mask_path")
         if mask_path and mask_path.exists():
@@ -72,7 +85,10 @@ class RiverMatcher:
         pc, _ = cv2.findContours(pe, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not sc or not pc:
             return 1.0
-        return cv2.matchShapes(max(sc, key=cv2.contourArea), max(pc, key=cv2.contourArea), cv2.CONTOURS_MATCH_I1, 0.0)
+        value = cv2.matchShapes(max(sc, key=cv2.contourArea), max(pc, key=cv2.contourArea), cv2.CONTOURS_MATCH_I1, 0.0)
+        if not np.isfinite(value):
+            return 1e6
+        return float(min(value, 1e6))
 
     def _direction_distance(self, stroke_mask: np.ndarray, patch_shape: np.ndarray) -> float:
         def angle(mask: np.ndarray) -> float:
@@ -104,6 +120,9 @@ class RiverMatcher:
         )
 
     def match(self, stroke: Stroke, bank: "PatchBank", k: int = 5) -> List[Tuple[Patch, float]]:
-        scored = [(patch, self.score(stroke, patch)) for patch in bank.patches]
-        scored.sort(key=lambda x: x[1])
+        candidates = [patch for patch in bank.patches if self.has_usable_water_mask(patch)]
+        if not candidates:
+            candidates = bank.patches
+        scored = [(patch, self.score(stroke, patch)) for patch in candidates]
+        scored.sort(key=lambda x: (x[1], -self.water_fraction(x[0])))
         return scored[:k]

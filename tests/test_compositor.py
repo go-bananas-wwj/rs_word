@@ -217,3 +217,29 @@ def test_compose_connected_text_fills_whole_mask():
     inside = output[40:80, 60:120].astype(np.float32)
     outside = output[0:20, 0:20].astype(np.float32)
     assert np.linalg.norm(inside.mean(axis=(0, 1)) - outside.mean(axis=(0, 1))) > 20
+
+
+def test_compose_text_crops_around_water_mask(tmp_path):
+    from PIL import Image
+
+    text_mask = np.zeros((80, 160), dtype=np.uint8)
+    text_mask[25:55, 20:140] = 255
+    patch_image = np.zeros((100, 100, 3), dtype=np.uint8)
+    patch_image[:, :] = [180, 180, 180]
+    patch_image[0:24, 0:80] = [0, 80, 220]
+    mask = np.zeros((100, 100), dtype=np.uint8)
+    mask[0:24, 0:80] = 255
+    mask_path = tmp_path / "water.png"
+    Image.fromarray(mask).save(mask_path)
+    patch = Patch(
+        "water",
+        "basin",
+        patch_image,
+        {"water_mask_path": str(mask_path), "river_metrics": {"water_fraction": 0.2, "skeleton_length_px": 20}},
+    )
+    stroke = Stroke(0, (25, 20, 55, 140), np.ones((30, 120), dtype=np.uint8))
+
+    output = compose_text(text_mask, [(stroke, patch)])
+
+    inside = output[30:50, 30:130]
+    assert inside[:, :, 2].mean() > inside[:, :, 0].mean()

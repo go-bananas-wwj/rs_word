@@ -59,12 +59,17 @@ def create(
         matcher = RiverMatcher()
         matches = []
         stroke_entries = []
+        used_patch_ids: set[str] = set()
         for i, stroke in enumerate(strokes):
-            top_k = matcher.match(stroke, bank, k=k)
+            top_k = matcher.match(stroke, bank, k=max(k, len(strokes) + 3))
             if not top_k:
                 typer.echo(f"No patch match for stroke {i}; skipping")
                 continue
-            best_patch, best_score = top_k[0]
+            best_patch, best_score = next(
+                ((patch, score) for patch, score in top_k if patch.patch_id not in used_patch_ids),
+                top_k[0],
+            )
+            used_patch_ids.add(best_patch.patch_id)
             matches.append((stroke, best_patch))
             entry = {
                 "char_index": stroke.char_index,
