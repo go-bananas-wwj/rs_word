@@ -27,6 +27,32 @@ DEFAULT_INPUTS = [
     Path("/data2/rs_word_vectors/clipped/yangtze_yellow_hydrorivers_candidates.gpkg"),
 ]
 
+STROKE_TYPES = (
+    "heng",
+    "shu",
+    "pie",
+    "na",
+    "dian",
+    "ti",
+    "heng-zhe",
+    "shu-gou",
+    "heng-pie",
+    "shu-wan-gou",
+)
+STROKE_ALIASES = {
+    "all": set(STROKE_TYPES),
+    "hengzhe": {"heng-zhe"},
+    "heng_zhe": {"heng-zhe"},
+    "shugou": {"shu-gou"},
+    "shu_gou": {"shu-gou"},
+    "hengpie": {"heng-pie"},
+    "heng_pie": {"heng-pie"},
+    "shuwangou": {"shu-wan-gou"},
+    "shu_wan_gou": {"shu-wan-gou"},
+    "wan_gou": {"shu-wan-gou"},
+    "bend": {"shu-wan-gou"},
+}
+
 
 @dataclass
 class StrokeCandidate:
@@ -69,7 +95,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-straight-km", type=float, default=8.0)
     parser.add_argument("--min-diagonal-km", type=float, default=6.0)
     parser.add_argument("--min-turn-km", type=float, default=12.0)
-    parser.add_argument("--stroke-types", default="heng,shu,pie,na,bend,hengzhe")
+    parser.add_argument("--stroke-types", default="all")
     return parser.parse_args()
 
 
@@ -195,6 +221,52 @@ def _band_score(value: float, low: float, high: float, feather: float) -> float:
     return max(0.0, 1.0 - (value - high) / feather)
 
 
+def _short_length_score(length_km: float, low: float, high: float) -> float:
+    return _band_score(length_km, low, high, max(low * 0.7, 0.4))
+
+
+def _compound_scores(
+    start_angle: float,
+    end_angle: float,
+    corner_angle: float,
+    aspect: float,
+    turn_length: float,
+    bend_clean_curve: float,
+) -> dict[str, float]:
+    def score_pair(first_axis: float, second_axis: float, first_tol: float = 26.0, second_tol: float = 30.0) -> float:
+        first = max(0.0, 1.0 - _axis_distance(start_angle, first_axis) / first_tol)
+        second = max(0.0, 1.0 - _axis_distance(end_angle, second_axis) / second_tol)
+        return first * second
+
+    def reversible(first_axis: float, second_axis: float, first_tol: float = 26.0, second_tol: float = 30.0) -> float:
+        forward = score_pair(first_axis, second_axis, first_tol, second_tol)
+        backward = score_pair(second_axis, first_axis, second_tol, first_tol)
+        return max(forward, backward)
+
+    right_angle = _band_score(corner_angle, 65.0, 115.0, 28.0)
+    hook_angle = _band_score(corner_angle, 28.0, 80.0, 26.0)
+    diagonal_turn = _band_score(corner_angle, 35.0, 115.0, 32.0)
+    return {
+        "heng-zhe": reversible(0.0, 90.0, 24.0, 30.0) * right_angle * turn_length * max(0.0, min(aspect / 1.25, 1.15)),
+        "shu-gou": reversible(90.0, 150.0, 24.0, 42.0) * hook_angle * turn_length,
+        "heng-pie": reversible(0.0, -45.0, 24.0, 34.0) * diagonal_turn * turn_length * max(0.0, min(aspect / 1.15, 1.15)),
+        "shu-wan-gou": reversible(90.0, 0.0, 28.0, 42.0) * right_angle * turn_length * bend_clean_curve,
+    }
+
+
+def normalize_stroke_types(value: str) -> set[str]:
+    requested = {part.strip() for part in value.split(",") if part.strip()}
+    if not requested or "all" in requested:
+        return set(STROKE_TYPES)
+    normalized: set[str] = set()
+    for stroke_type in requested:
+        normalized.update(STROKE_ALIASES.get(stroke_type, {stroke_type}))
+    unknown = sorted(normalized - set(STROKE_TYPES))
+    if unknown:
+        raise ValueError(f"Unknown stroke types: {', '.join(unknown)}")
+    return normalized
+
+
 def _principal_turn(line: LineString) -> float:
     coords = list(line.coords)
     if len(coords) < 3:
@@ -291,27 +363,26 @@ def score_segment(
     vertical = max(0.0, 1.0 - _axis_distance(angle, 90) / 25.0)
     diag_pos = max(0.0, 1.0 - _axis_distance(angle, 45) / 24.0)
     diag_neg = max(0.0, 1.0 - _axis_distance(angle, -45) / 24.0)
+    ti_angle = max(0.0, 1.0 - _axis_distance(angle, 18) / 22.0)
     straight_score = max(0.0, (straightness - 0.86) / 0.14)
     clean_axis = max(0.0, 1.0 - deviation_ratio / 0.13)
     low_turn_penalty = _band_score(turn, 0.0, 16.0, 14.0)
-    bend_turn_score = _band_score(turn, 55.0, 125.0, 35.0)
-    bend_sinuosity_score = _band_score(sinuosity, 1.05, 1.6, 0.35)
     bend_clean_curve = turn_sign_consistency * max(0.0, 1.0 - turn_reversals / 2.0)
-    hengzhe_start = max(0.0, 1.0 - _axis_distance(start_angle, 0) / 24.0)
-    hengzhe_end = max(0.0, 1.0 - _axis_distance(end_angle, 90) / 28.0)
-    hengzhe_corner = _band_score(corner_angle, 70.0, 105.0, 24.0)
     long_straight = _band_score(length_km, min_straight_km, 80.0, max(min_straight_km * 0.45, 0.5))
     diagonal_length = _band_score(length_km, min_diagonal_km, 70.0, max(min_diagonal_km * 0.45, 0.5))
     turn_length = _band_score(length_km, min_turn_km, 90.0, max(min_turn_km * 0.45, 0.5))
+    short_mark = _short_length_score(length_km, 0.4, max(min_straight_km * 0.9, 2.4))
+    dot_shape = _band_score(aspect, 0.45, 2.2, 1.2) * _band_score(straightness, 0.35, 1.0, 0.5)
 
     stroke_scores = {
         "heng": horizontal * straight_score * clean_axis * low_turn_penalty * long_straight * min(aspect / 4.0, 1.15),
         "shu": vertical * straight_score * clean_axis * low_turn_penalty * long_straight * min((1.0 / max(aspect, 0.05)) / 4.0, 1.15),
         "pie": diag_neg * straight_score * clean_axis * low_turn_penalty * diagonal_length,
         "na": diag_pos * straight_score * clean_axis * low_turn_penalty * diagonal_length,
-        "bend": bend_turn_score * bend_sinuosity_score * bend_clean_curve * turn_length * max(0.0, min((1.0 - straightness) / 0.35, 1.15)),
-        "hengzhe": hengzhe_start * hengzhe_end * hengzhe_corner * turn_length * max(0.0, min(aspect / 1.4, 1.15)),
+        "dian": short_mark * dot_shape * _band_score(turn, 0.0, 75.0, 60.0),
+        "ti": ti_angle * straight_score * clean_axis * low_turn_penalty * _short_length_score(length_km, 0.8, max(min_diagonal_km * 1.5, 4.5)),
     }
+    stroke_scores.update(_compound_scores(start_angle, end_angle, corner_angle, aspect, turn_length, bend_clean_curve))
     for stroke_type, raw_score in stroke_scores.items():
         score = raw_score * width_quality
         if score >= 0.20:
@@ -536,7 +607,7 @@ def pick_default_input() -> Path:
 def main() -> None:
     args = parse_args()
     input_vector = args.input_vector or pick_default_input()
-    stroke_types = {s.strip() for s in args.stroke_types.split(",") if s.strip()}
+    stroke_types = normalize_stroke_types(args.stroke_types)
     candidates = mine_candidates(
         input_vector=input_vector,
         window_km=args.window_km,
