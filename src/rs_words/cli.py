@@ -69,6 +69,7 @@ def create(
                 "patch_id": best_patch.patch_id,
                 "basin": best_patch.basin,
                 "score": best_score,
+                "match_shape_source": matcher.patch_shape_source(best_patch),
                 **best_patch.meta,
             }
             stroke_entries.append(entry)

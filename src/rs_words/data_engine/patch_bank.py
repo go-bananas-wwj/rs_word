@@ -93,7 +93,9 @@ class PatchBank:
                             meta["water_mask_path"] = _relative_to_root(resolved_mask, data_root)
 
                     f.write(json.dumps(meta, ensure_ascii=False) + "\n")
-                    patches.append(Patch(patch_id=img_path.stem, basin=basin_dir.name, image=arr, meta=meta))
+                    runtime_meta = dict(meta)
+                    runtime_meta["_data_root"] = str(data_root)
+                    patches.append(Patch(patch_id=img_path.stem, basin=basin_dir.name, image=arr, meta=runtime_meta))
         return cls(patches)
 
     @classmethod
@@ -109,6 +111,7 @@ class PatchBank:
                 raise ValueError(f"Patch metadata has no image_path: {meta.get('patch_id')}")
             img = Image.open(img_path).convert("RGB")
             arr = np.array(img, dtype=np.uint8)
+            meta["_data_root"] = str(root)
             patches.append(Patch(patch_id=meta["patch_id"], basin=meta["basin"], image=arr, meta=meta))
         return cls(patches)
 

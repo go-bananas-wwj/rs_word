@@ -110,6 +110,42 @@ def _draw_reference_mask(draw_fn: Callable[[np.ndarray], None]) -> np.ndarray:
     return canvas
 
 
+def _has_water_mask(patch: Patch) -> bool:
+    return bool(patch.meta.get("water_mask_path"))
+
+
+def _is_usable_water_patch(patch: Patch) -> bool:
+    if not _has_water_mask(patch):
+        return False
+    metrics = patch.meta.get("river_metrics") or {}
+    water_fraction = float(metrics.get("water_fraction", 0.0) or 0.0)
+    largest_fraction = float(metrics.get("largest_component_fraction", 0.0) or 0.0)
+    skeleton_length = int(metrics.get("skeleton_length_px", 0) or 0)
+    if water_fraction < 0.002 or water_fraction > 0.75:
+        return False
+    if largest_fraction < 0.001:
+        return False
+    return skeleton_length >= 8
+
+
+def _candidate_patches(bank: PatchBank) -> List[Patch]:
+    masked = [patch for patch in bank.patches if _has_water_mask(patch)]
+    if not masked:
+        return bank.patches
+    usable = [patch for patch in masked if _is_usable_water_patch(patch)]
+    return usable or masked
+
+
+def _source_image_path(general_bank_dir: Path, patch: Patch) -> Path:
+    image_path = patch.meta.get("image_path")
+    if image_path:
+        candidate = Path(image_path)
+        if candidate.is_absolute():
+            return candidate
+        return general_bank_dir.parent / candidate
+    return general_bank_dir / f"{patch.patch_id}.png"
+
+
 def build_stroke_reference_masks(output_dir: Path) -> Dict[str, Path]:
     ref_dir = output_dir / "_references"
     ref_dir.mkdir(parents=True, exist_ok=True)
@@ -140,6 +176,7 @@ def build_stroke_patch_bank(
 
     matcher = RiverMatcher()
     summary: Dict[str, Dict] = {}
+    candidates = _candidate_patches(bank)
 
     for spec in STROKE_SPECS:
         stroke_mask = _draw_reference_mask(spec.draw)
@@ -147,7 +184,7 @@ def build_stroke_patch_bank(
 
         scored: List[Tuple[Patch, float]] = []
         seen_ids: set[str] = set()
-        for patch in bank.patches:
+        for patch in candidates:
             if patch.patch_id in seen_ids:
                 continue
             score = matcher.score(stroke, patch)
@@ -161,19 +198,21 @@ def build_stroke_patch_bank(
         stroke_out_dir.mkdir(parents=True, exist_ok=True)
 
         for patch, score in selected:
-            src_img_path = general_bank_dir / patch.meta.get("image_path", f"{patch.patch_id}.png")
+            src_img_path = _source_image_path(general_bank_dir, patch)
             if not src_img_path.exists():
                 # Fallback: search within the bank directory.
-                candidates = list(general_bank_dir.rglob(f"{patch.patch_id}.png"))
-                if candidates:
-                    src_img_path = candidates[0]
+                image_candidates = list(general_bank_dir.rglob(f"{patch.patch_id}.png"))
+                if image_candidates:
+                    src_img_path = image_candidates[0]
             dst_img_path = stroke_out_dir / f"{patch.patch_id}.png"
             if src_img_path.exists():
                 shutil.copy2(src_img_path, dst_img_path)
 
             sidecar = dict(patch.meta)
+            sidecar.pop("_data_root", None)
             sidecar["stroke_match_score"] = score
             sidecar["stroke_name"] = spec.name
+            sidecar["match_shape_source"] = matcher.patch_shape_source(patch)
             sidecar_path = stroke_out_dir / f"{patch.patch_id}.json"
             sidecar_path.write_text(json.dumps(sidecar, ensure_ascii=False), encoding="utf-8")
 
@@ -182,6 +221,8 @@ def build_stroke_patch_bank(
             "reference_mask_path": str(reference_paths[spec.name]),
             "output_directory": str(stroke_out_dir),
             "saved_patches": len(selected),
+            "candidate_patches": len(candidates),
+            "masked_candidates": sum(1 for patch in candidates if _has_water_mask(patch)),
         }
 
     summary_path = output_dir / "summary.json"
