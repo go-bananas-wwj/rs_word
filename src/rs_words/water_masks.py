@@ -47,8 +47,8 @@ def water_mask_ndwi(stack: np.ndarray, threshold: float = 0.0, min_size: int = 4
     nir = stack[3]
     ndwi = (green - nir) / (green + nir + 1e-6)
     mask = ndwi > threshold
-    mask = morphology.remove_small_objects(mask, min_size)
-    mask = morphology.remove_small_holes(mask, min_size)
+    mask = morphology.remove_small_objects(mask, max_size=min_size)
+    mask = morphology.remove_small_holes(mask, max_size=min_size)
     return (mask.astype(np.uint8) * 255)
 
 

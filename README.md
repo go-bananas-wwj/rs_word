@@ -9,6 +9,9 @@
 ## 快速开始
 
 ```bash
+# 0. 激活项目 Conda 环境
+source /opt/conda/etc/profile.d/conda.sh && conda activate rs_words
+
 # 1. 安装（含开发依赖）
 pip install -e ".[dev]"
 
@@ -32,6 +35,35 @@ make run-web
 
 网页服务默认运行在 <http://localhost:8000>，提交文字后可在浏览器中直接预览并下载结果。
 
+## 水体 mask 与笔画素材筛选
+
+高质量笔画模式需要先把真实河道从遥感切片中分割出来，再用河道 mask 匹配笔画形状。推荐流程：
+
+```bash
+# 1. 下载多区域 Sentinel-2 四波段 GeoTIFF，同时写 RGB 预览
+python scripts/build_diverse_patch_bank.py --format geotiff4 --rgb-preview
+
+# 2. 用公开水体分割模型生成 mask（需要先在 rs_words Conda 环境安装/配置 OmniWaterMask）
+python scripts/build_water_masks.py --backend omniwatermask --patch-bank /data/rs_word/patch_bank
+
+# 3. 如果模型环境暂时不可用，可先用 NDWI fallback 跑通链路
+python scripts/build_water_masks.py --backend ndwi --patch-bank /data/rs_word/patch_bank
+
+# 4. 用 mask 和河道几何指标重建笔画素材库
+python scripts/build_stroke_library.py
+
+# 5. 使用笔画拼贴模式生成
+rs-words create "河" \
+  --mode stroke \
+  --font /data/rs_word/fonts/SourceHanSansCN-Regular.otf \
+  --output /data/rs_word/outputs/河_stroke.png \
+  --meta /data/rs_word/outputs/河_stroke.json
+```
+
+`build_water_masks.py` 会把 mask 写入 `/data/rs_word/water_masks/`，并把 `water_mask_path`、`mask_backend`、`river_metrics` 写回 patch bank metadata。`RiverMatcher` 会优先使用这些 mask；没有 mask 的旧数据仍会回退到 RGB 边缘匹配。
+
+OmniWaterMask 可通过包内 API 或 `OMNIWATERMASK_COMMAND` 包装命令接入。`rivgraph` 当前作为可选增强依赖；未安装时，本项目使用 `skimage` skeleton 指标提供方向、连通域、骨架长度和分叉密度等基础几何过滤。
+
 ## 数据目录
 
 所有大文件统一存放在 `/data/rs_word/`，与代码仓库分离，避免误提交：
@@ -41,15 +73,18 @@ make run-web
 | `/data/rs_word/osm/` | 从 OpenStreetMap 下载的河流流域矢量数据 |
 | `/data/rs_word/satellite_chips/raw/` | 从 Planetary Computer 下载的原始卫星影像切片 |
 | `/data/rs_word/patch_bank/` | 构建完成的影像切片库及其元数据 |
+| `/data/rs_word/water_masks/` | 水体/河道二值 mask 与几何指标来源 |
 | `/data/rs_word/outputs/` | 生成的汉字图片与 JSON 元数据 |
 | `/data/rs_word/fonts/` | 用户自备的 CJK 字体文件 |
 
 ## 开发
 
 ```bash
+source /opt/conda/etc/profile.d/conda.sh && conda activate rs_words
 make test
 # 等价于
 pytest -v
+ruff check src/rs_words tests scripts
 ```
 
 ## 命令行用法
