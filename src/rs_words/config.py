@@ -26,3 +26,8 @@ BASINS = {
 PC_STAC_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
 PC_COLLECTION_SENTINEL = "sentinel-2-l2a"
 PC_COLLECTION_LANDSAT = "landsat-c2-l2"
+
+PC_DATETIME_RANGE = "2022-01-01/2024-12-31"
+PC_CLOUD_COVER_LT = 20
+PC_FALLBACK_MAX_ITEMS = 5
+PC_ASSET_KEYS = ["visual", "rendered_preview"]
