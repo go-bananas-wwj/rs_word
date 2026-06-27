@@ -54,6 +54,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cloud-cover", type=float, default=15.0)
     parser.add_argument("--fallback-cloud-cover", type=float, default=30.0)
     parser.add_argument("--max-items", type=int, default=8)
+    parser.add_argument("--bbox-scale", type=float, default=1.0)
+    parser.add_argument("--no-contact-sheet", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -91,6 +93,17 @@ def iter_candidates(candidate_roots: Iterable[Path], strokes: list[str], per_str
     for stroke in strokes:
         rows.extend(selected[stroke])
     return rows
+
+
+def scale_bbox(bbox: tuple[float, float, float, float], scale: float) -> tuple[float, float, float, float]:
+    if scale <= 0:
+        raise ValueError("bbox scale must be positive")
+    minx, miny, maxx, maxy = bbox
+    cx = (minx + maxx) / 2
+    cy = (miny + maxy) / 2
+    half_w = (maxx - minx) * scale / 2
+    half_h = (maxy - miny) * scale / 2
+    return (cx - half_w, cy - half_h, cx + half_w, cy + half_h)
 
 
 def search_items(catalog, bbox: tuple[float, float, float, float], datetime: str, cloud_cover: float, max_items: int):
@@ -160,7 +173,8 @@ def safe_id(row: dict, rank: int) -> str:
 
 def download_one(catalog, row: dict, rank: int, args: argparse.Namespace) -> dict | None:
     stroke = row["stroke_type"]
-    bbox = tuple(float(v) for v in row["api_bbox"])
+    original_bbox = tuple(float(v) for v in row["api_bbox"])
+    bbox = scale_bbox(original_bbox, args.bbox_scale)
     out_dir = args.output_root / stroke
     out_dir.mkdir(parents=True, exist_ok=True)
     chip_id = safe_id(row, rank)
@@ -193,6 +207,8 @@ def download_one(catalog, row: dict, rank: int, args: argparse.Namespace) -> dic
                 "target_river": row.get("target_river"),
                 "candidate": row,
                 "bbox": bbox,
+                "original_bbox": original_bbox,
+                "bbox_scale": args.bbox_scale,
                 "geotiff_path": str(tif_path),
                 "preview_path": str(png_path),
                 "overlay_path": str(overlay_path),
@@ -286,7 +302,8 @@ def main() -> None:
         for row in rows:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
     make_gallery(rows, args.output_root)
-    make_sheet(rows, args.output_root)
+    if not args.no_contact_sheet:
+        make_sheet(rows, args.output_root)
     print(f"saved={len(rows)}")
     print(f"output={args.output_root}")
 

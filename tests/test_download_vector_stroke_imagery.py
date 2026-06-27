@@ -42,3 +42,11 @@ def test_iter_candidates_limits_per_stroke(tmp_path: Path) -> None:
 
     assert len(selected) == 1
     assert selected[0]["target_river"] == "yangtze"
+
+
+def test_scale_bbox_expands_around_center() -> None:
+    module = _load_module()
+
+    scaled = module.scale_bbox((0.0, 10.0, 10.0, 20.0), 1.2)
+
+    assert scaled == pytest.approx((-1.0, 9.0, 11.0, 21.0))
