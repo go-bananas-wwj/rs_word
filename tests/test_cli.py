@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import typer
 from typer.testing import CliRunner
 
 from rs_words.cli import app
@@ -20,3 +19,4 @@ def test_cli_mock(tmp_path: Path):
     # metadata.jsonl is intentionally missing
     result = runner.invoke(app, ["河", "--patch-bank", str(patch_bank)])
     assert result.exit_code != 0
+    assert "patch bank not found" in result.output

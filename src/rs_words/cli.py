@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
 import typer
 from PIL import Image
 
@@ -26,7 +25,7 @@ def create(
     font_size: int = typer.Option(DEFAULT_FONT_SIZE, "--font-size"),
     k: int = typer.Option(DEFAULT_K, "--k"),
     meta_output: Optional[Path] = typer.Option(None, "--meta"),
-):
+) -> None:
     """Render Chinese text as a river satellite-image mosaic."""
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -36,7 +35,14 @@ def create(
 
     metadata_path = patch_bank_dir / "metadata.jsonl"
     typer.echo(f"Loading patch bank from {metadata_path}")
-    bank = PatchBank.load(metadata_path)
+    try:
+        bank = PatchBank.load(metadata_path)
+    except FileNotFoundError:
+        typer.echo(f"Error: patch bank not found at {metadata_path}", err=True)
+        raise typer.Exit(code=1)
+    except Exception as exc:
+        typer.echo(f"Error loading patch bank: {exc}", err=True)
+        raise typer.Exit(code=1)
     typer.echo(f"Loaded {len(bank)} patches")
 
     matcher = RiverMatcher()
