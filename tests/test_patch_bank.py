@@ -34,3 +34,23 @@ def test_build_from_jpg_chip(tmp_path: Path):
     assert bank.get("seg_00000002") is not None
     loaded = PatchBank.load(tmp_path / "bank" / "metadata.jsonl")
     assert len(loaded) == 1
+
+
+def test_build_preserves_geotiff_metadata(tmp_path: Path):
+    import json
+
+    raw = tmp_path / "raw" / "yangtze"
+    raw.mkdir(parents=True)
+    img = Image.new("RGB", (128, 128), (0, 100, 200))
+    img.save(raw / "seg_00000003.png")
+    (raw / "seg_00000003.tif").write_bytes(b"placeholder")
+    meta = {"item_id": "test", "collection": "sentinel-2-l2a"}
+    (raw / "seg_00000003.json").write_text(json.dumps(meta))
+
+    bank = PatchBank.build_from_raw_chips(raw, output_dir=tmp_path / "bank")
+
+    patch = bank.get("seg_00000003")
+    assert patch is not None
+    assert patch.meta["geotiff_path"] == "raw/yangtze/seg_00000003.tif"
+    loaded = PatchBank.load(tmp_path / "bank" / "metadata.jsonl")
+    assert loaded.get("seg_00000003").meta["geotiff_path"] == "raw/yangtze/seg_00000003.tif"

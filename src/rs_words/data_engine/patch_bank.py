@@ -19,6 +19,22 @@ class Patch:
     meta: Dict
 
 
+def _as_data_root_path(root: Path, value: str | None) -> Path | None:
+    if not value:
+        return None
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    return root / path
+
+
+def _relative_to_root(path: Path, root: Path) -> str:
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        return str(path)
+
+
 class PatchBank:
     def __init__(self, patches: List[Patch]):
         self.patches = patches
@@ -32,15 +48,13 @@ class PatchBank:
         target_size: int = 256,
     ) -> "PatchBank":
         output_dir.mkdir(parents=True, exist_ok=True)
+        data_root = output_dir.parent
         metadata_path = output_dir / "metadata.jsonl"
         patches = []
 
         # Support raw_dir being either a parent of basin directories or a single basin.
         img_exts = {".png", ".jpg", ".jpeg"}
-        if any(
-            p.is_file() and p.suffix.lower() in img_exts
-            for p in raw_dir.iterdir()
-        ):
+        if any(p.is_file() and p.suffix.lower() in img_exts for p in raw_dir.iterdir()):
             basin_dirs = [raw_dir]
         else:
             basin_dirs = [d for d in sorted(raw_dir.iterdir()) if d.is_dir()]
@@ -63,9 +77,21 @@ class PatchBank:
                     arr = np.array(img, dtype=np.uint8)
                     out_path = out_basin_dir / img_path.name
                     img.save(out_path)
+
                     meta["patch_id"] = img_path.stem
                     meta["basin"] = basin_dir.name
-                    meta["image_path"] = str(out_path.relative_to(output_dir.parent))
+                    meta["image_path"] = _relative_to_root(out_path, data_root)
+
+                    tif_path = basin_dir / f"{img_path.stem}.tif"
+                    if tif_path.exists() and not meta.get("geotiff_path"):
+                        meta["geotiff_path"] = _relative_to_root(tif_path, data_root)
+
+                    mask_path = meta.get("water_mask_path")
+                    if mask_path:
+                        resolved_mask = _as_data_root_path(data_root, mask_path)
+                        if resolved_mask and resolved_mask.exists():
+                            meta["water_mask_path"] = _relative_to_root(resolved_mask, data_root)
+
                     f.write(json.dumps(meta, ensure_ascii=False) + "\n")
                     patches.append(Patch(patch_id=img_path.stem, basin=basin_dir.name, image=arr, meta=meta))
         return cls(patches)
@@ -75,10 +101,12 @@ class PatchBank:
         if not metadata_path.exists():
             raise FileNotFoundError(f"Patch bank metadata not found: {metadata_path}")
         patches = []
-        root = metadata_path.parent.parent  # data/
+        root = metadata_path.parent.parent  # data root, e.g. /data/rs_word
         for line in metadata_path.read_text(encoding="utf-8").splitlines():
             meta = json.loads(line)
-            img_path = root / meta["image_path"]
+            img_path = _as_data_root_path(root, meta.get("image_path"))
+            if img_path is None:
+                raise ValueError(f"Patch metadata has no image_path: {meta.get('patch_id')}")
             img = Image.open(img_path).convert("RGB")
             arr = np.array(img, dtype=np.uint8)
             patches.append(Patch(patch_id=meta["patch_id"], basin=meta["basin"], image=arr, meta=meta))
