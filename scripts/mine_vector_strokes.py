@@ -66,6 +66,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-per-type", type=int, default=80)
     parser.add_argument("--diversity-radius-km", type=float, default=18.0)
     parser.add_argument("--per-source-limit", type=int, default=2)
+    parser.add_argument("--min-straight-km", type=float, default=8.0)
+    parser.add_argument("--min-diagonal-km", type=float, default=6.0)
+    parser.add_argument("--min-turn-km", type=float, default=12.0)
     parser.add_argument("--stroke-types", default="heng,shu,pie,na,bend,hengzhe")
     return parser.parse_args()
 
@@ -229,6 +232,9 @@ def score_segment(
     width_mean_m: float | None,
     width_max_m: float | None,
     api_buffer_km: float,
+    min_straight_km: float = 8.0,
+    min_diagonal_km: float = 6.0,
+    min_turn_km: float = 12.0,
 ) -> list[StrokeCandidate]:
     coords = list(line_m.coords)
     if len(coords) < 2 or line_m.length <= 0:
@@ -294,9 +300,9 @@ def score_segment(
     hengzhe_start = max(0.0, 1.0 - _axis_distance(start_angle, 0) / 24.0)
     hengzhe_end = max(0.0, 1.0 - _axis_distance(end_angle, 90) / 28.0)
     hengzhe_corner = _band_score(corner_angle, 70.0, 105.0, 24.0)
-    long_straight = _band_score(length_km, 8.0, 80.0, 4.0)
-    diagonal_length = _band_score(length_km, 6.0, 70.0, 3.0)
-    turn_length = _band_score(length_km, 12.0, 90.0, 5.0)
+    long_straight = _band_score(length_km, min_straight_km, 80.0, max(min_straight_km * 0.45, 0.5))
+    diagonal_length = _band_score(length_km, min_diagonal_km, 70.0, max(min_diagonal_km * 0.45, 0.5))
+    turn_length = _band_score(length_km, min_turn_km, 90.0, max(min_turn_km * 0.45, 0.5))
 
     stroke_scores = {
         "heng": horizontal * straight_score * clean_axis * low_turn_penalty * long_straight * min(aspect / 4.0, 1.15),
@@ -330,6 +336,9 @@ def mine_candidates(
     api_buffer_km: float,
     min_width_mean: float,
     stroke_types: set[str],
+    min_straight_km: float = 8.0,
+    min_diagonal_km: float = 6.0,
+    min_turn_km: float = 12.0,
 ) -> list[StrokeCandidate]:
     gdf = gpd.read_file(input_vector)
     if gdf.empty:
@@ -351,7 +360,18 @@ def mine_candidates(
                 seg_ll = substring(line_ll, start_norm, end_norm, normalized=True)
                 if not isinstance(seg_m, LineString) or not isinstance(seg_ll, LineString):
                     continue
-                for cand in score_segment(seg_m, seg_ll, idx, river, width_mean, width_max, api_buffer_km):
+                for cand in score_segment(
+                    seg_m,
+                    seg_ll,
+                    idx,
+                    river,
+                    width_mean,
+                    width_max,
+                    api_buffer_km,
+                    min_straight_km=min_straight_km,
+                    min_diagonal_km=min_diagonal_km,
+                    min_turn_km=min_turn_km,
+                ):
                     if cand.stroke_type in stroke_types:
                         candidates.append(cand)
     candidates.sort(key=lambda c: c.score, reverse=True)
@@ -524,6 +544,9 @@ def main() -> None:
         api_buffer_km=args.api_buffer_km,
         min_width_mean=args.min_width_mean,
         stroke_types=stroke_types,
+        min_straight_km=args.min_straight_km,
+        min_diagonal_km=args.min_diagonal_km,
+        min_turn_km=args.min_turn_km,
     )
     write_outputs(candidates, args.output_root, args.max_per_type, args.diversity_radius_km, args.per_source_limit)
     print(f"input={input_vector}")
