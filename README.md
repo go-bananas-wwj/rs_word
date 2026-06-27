@@ -19,11 +19,12 @@ cp /path/to/SourceHanSansCN-Regular.otf /data/rs_word/fonts/
 # 3. 构建卫星影像切片库（需要流域 OSM 数据与 Planetary Computer 访问，耗时较长）
 make build-bank
 
-# 4. 生成河流汉字（输出为遥感影像切片的拼贴）
+# 4. 生成河流汉字（默认使用网格模式拼贴遥感影像）
 rs-words create "河" \
   --font /data/rs_word/fonts/SourceHanSansCN-Regular.otf \
   --output /data/rs_word/outputs/河.png \
-  --meta /data/rs_word/outputs/河.json
+  --meta /data/rs_word/outputs/河.json \
+  --font-size 512 --tile-size 64
 
 # 5. 启动网页 Demo
 make run-web
@@ -68,6 +69,8 @@ rs-words create [OPTIONS] TEXT
 | `--patch-bank PATH` | 切片库目录 | `/data/rs_word/patch_bank/` |
 | `--font-size INT` | 渲染字号 | `256` |
 | `--k INT` | 每个笔画候选匹配数量 | `5` |
+| `--mode {grid,stroke}` | 合成模式：网格拼图 / 笔画拼图 | `grid` |
+| `--tile-size INT` | grid 模式下每个瓦片的像素大小 | `128` |
 | `--help` | 显示帮助信息 | - |
 
 示例：

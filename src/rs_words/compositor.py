@@ -5,8 +5,9 @@ from typing import List, Optional, Tuple
 import cv2
 import numpy as np
 
-from rs_words.data_engine.patch_bank import Patch
+from rs_words.data_engine.patch_bank import Patch, PatchBank
 from rs_words.glyph import Stroke
+from rs_words.matcher import RiverMatcher
 
 
 def _resize_patch(patch_image: np.ndarray, target_w: int, target_h: int) -> np.ndarray:
@@ -35,42 +36,36 @@ def _feather_mask(mask: np.ndarray) -> np.ndarray:
     return dt / max_dt
 
 
-def _stroke_angle(mask: np.ndarray) -> float:
-    """Return the principal axis angle of a binary mask in degrees."""
-    ys, xs = np.where(mask > 0)
-    if len(xs) < 2:
-        return 0.0
-    cov = np.cov(xs, ys)
-    eigvals, eigvecs = np.linalg.eigh(cov)
-    vec = eigvecs[:, np.argmax(eigvals)]
-    return np.degrees(np.arctan2(vec[1], vec[0]))
+def _aspect_crop_patch(
+    patch_image: np.ndarray, target_w: int, target_h: int, zoom: float = 2.0
+) -> np.ndarray:
+    """Crop a region from the patch that matches the stroke bbox aspect ratio.
 
-
-def _zoom_crop_patch(patch_image: np.ndarray, stroke_mask: np.ndarray, zoom: float = 3.0) -> np.ndarray:
-    """Crop a center band around the river and upscale so the river fills more of the stroke.
-
-    The stroke mask's principal angle tells us whether the stroke (and therefore the
-    river in the patch) runs roughly horizontally or vertically. We then crop the
-    patch perpendicular to that direction and resize back to the original patch size,
-    producing a digital zoom that makes the river width occupy a larger share of the tile.
+    The patch is square (256x256), but strokes can be long horizontal or tall
+    vertical. Instead of stretching the whole square patch to fit the stroke,
+    we crop a centered band whose aspect ratio matches the stroke, optionally
+    zooming in so the river fills more of the tile, and then resize it to the
+    stroke bbox. This preserves the natural proportions of the river imagery
+    while making the river clearly visible.
     """
     h, w = patch_image.shape[:2]
-    angle = abs(_stroke_angle(stroke_mask))
-    if angle > 90:
-        angle = 180 - angle
+    if target_h <= 0 or target_w <= 0:
+        return patch_image
+    target_aspect = target_w / target_h
+    patch_aspect = w / h
 
-    # Horizontal-ish stroke: the river runs left-right, so crop a vertical band.
-    if angle <= 45:
-        crop_h = max(int(h / zoom), 1)
+    if target_aspect >= patch_aspect:
+        # Stroke is wider than the patch: crop a horizontal band (full width, less height).
+        crop_h = max(int(w / target_aspect / zoom), 1)
         y0 = (h - crop_h) // 2
         cropped = patch_image[y0 : y0 + crop_h, :, ...]
     else:
-        # Vertical-ish stroke: the river runs top-bottom, so crop a horizontal band.
-        crop_w = max(int(w / zoom), 1)
+        # Stroke is taller than the patch: crop a vertical band (less width, full height).
+        crop_w = max(int(h * target_aspect / zoom), 1)
         x0 = (w - crop_w) // 2
         cropped = patch_image[:, x0 : x0 + crop_w, ...]
 
-    return cv2.resize(cropped, (w, h), interpolation=cv2.INTER_AREA)
+    return cropped
 
 
 def _build_lut(template_channel: np.ndarray, source_channel: np.ndarray) -> np.ndarray:
@@ -123,13 +118,14 @@ def compose_text(
     stroke_matches: List[Tuple[Stroke, Patch]],
     tone_reference: Optional[np.ndarray] = None,
 ) -> np.ndarray:
-    """Compose a collage mosaic from stroke-to-patch matches.
+    """Compose a stroke-level collage mosaic from stroke-to-patch matches.
 
     - `text_mask` is used only to determine the output canvas dimensions (H, W).
-    - For each (stroke, patch) pair, the patch is first zoom-cropped around the
-      river so the river fills more of the tile, then resized to the stroke bbox
-      and pasted directly onto a white canvas. No stroke-shaped mask is applied,
-      so the resulting mosaic is an arrangement of zoomed satellite image tiles.
+    - For each (stroke, patch) pair, a centered region matching the stroke's
+      aspect ratio is cropped from the square patch, resized to the stroke bbox
+      without distortion, and pasted directly onto a white canvas. No stroke-shaped
+      mask is applied, so the result is an arrangement of proportionally-cropped
+      satellite image tiles.
     - Clip the canvas to [0, 255] and convert to uint8.
     - If `tone_reference` is provided, resize it to (W, H) and apply
       `match_histograms(canvas, tone_reference)` so the output has a consistent tone.
@@ -146,8 +142,8 @@ def compose_text(
         target_w = xmax - xmin
         target_h = ymax - ymin
 
-        zoomed_patch = _zoom_crop_patch(patch.image, stroke.mask, zoom=3.0)
-        resized_patch = _resize_patch(zoomed_patch, target_w, target_h)
+        cropped_patch = _aspect_crop_patch(patch.image, target_w, target_h)
+        resized_patch = _resize_patch(cropped_patch, target_w, target_h)
         if resized_patch.size == 0:
             continue
         if resized_patch.ndim == 2:
@@ -169,6 +165,62 @@ def compose_text(
         resized_patch = resized_patch[crop_top:crop_bottom, crop_left:crop_right]
 
         canvas[y0:y1, x0:x1] = resized_patch
+
+    canvas = np.clip(canvas, 0, 255).astype(np.uint8)
+
+    if tone_reference is not None:
+        tone_resized = cv2.resize(tone_reference, (w, h), interpolation=cv2.INTER_AREA)
+        if tone_resized.ndim == 2:
+            tone_resized = np.stack([tone_resized] * 3, axis=-1)
+        if tone_resized.shape == canvas.shape:
+            canvas = match_histograms(canvas, tone_resized)
+
+    return canvas
+
+
+def compose_grid(
+    text_mask: np.ndarray,
+    bank: PatchBank,
+    tile_size: int = 128,
+    min_ink_ratio: float = 0.15,
+    tone_reference: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    """Compose a grid mosaic where each tile is a satellite patch.
+
+    The text mask is divided into a grid of `tile_size` cells. For each cell that
+    contains enough text ink, a patch whose shape best matches the local ink is
+    selected and pasted into the cell. This produces a denser, more recognizable
+    mosaic than stroke-level collage, especially for characters whose strokes are
+    merged by skeletonization.
+    """
+    if text_mask.ndim != 2:
+        raise ValueError("text_mask must be a 2D array")
+    h, w = text_mask.shape
+    canvas = np.full((h, w, 3), 255.0, dtype=np.float32)
+    matcher = RiverMatcher()
+
+    for y in range(0, h, tile_size):
+        for x in range(0, w, tile_size):
+            ymax = min(y + tile_size, h)
+            xmax = min(x + tile_size, w)
+            if ymax <= y or xmax <= x:
+                continue
+            cell_mask = text_mask[y:ymax, x:xmax]
+            cell_area = (ymax - y) * (xmax - x)
+            if cell_area == 0 or (cell_mask.sum() / cell_area) < min_ink_ratio:
+                continue
+            stroke = Stroke(char_index=0, bbox=(y, x, ymax, xmax), mask=cell_mask)
+            top_k = matcher.match(stroke, bank, k=5)
+            if not top_k:
+                continue
+            best_patch, _ = top_k[0]
+            cropped = _aspect_crop_patch(best_patch.image, xmax - x, ymax - y)
+            resized = _resize_patch(cropped, xmax - x, ymax - y)
+            if resized.size == 0:
+                continue
+            if resized.ndim == 2:
+                resized = np.stack([resized] * 3, axis=-1)
+            canvas[y:ymax, x:xmax] = resized
 
     canvas = np.clip(canvas, 0, 255).astype(np.uint8)
 
