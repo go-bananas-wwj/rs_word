@@ -37,6 +37,7 @@ rs-words = "rs_words.cli:app"
 "scripts/build_patch_bank.py" = ["E402"]
 "scripts/build_water_masks.py" = ["E402"]
 "scripts/build_mainstem_dataset.py" = ["E402"]
+"scripts/mine_vector_strokes.py" = ["E402"]
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
