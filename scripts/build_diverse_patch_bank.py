@@ -84,6 +84,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Build and save the segment catalog without opening STAC or downloading chips.",
     )
+    parser.add_argument(
+        "--areas",
+        default=None,
+        help="Comma-separated area names to include, e.g. yz_yichang,yz_wuhan.",
+    )
     return parser.parse_args()
 
 
@@ -93,8 +98,19 @@ def _positive_limit(value: int, name: str) -> int:
     return value
 
 
-def _selected_areas(areas: Iterable[Tuple[str, Tuple[float, float, float, float]]]) -> list[Tuple[str, Tuple[float, float, float, float]]]:
-    return list(areas)
+def _selected_areas(
+    areas: Iterable[Tuple[str, Tuple[float, float, float, float]]],
+    include: str | None = None,
+) -> list[Tuple[str, Tuple[float, float, float, float]]]:
+    all_areas = list(areas)
+    if include is None:
+        return all_areas
+    requested = {name.strip() for name in include.split(",") if name.strip()}
+    known = {name for name, _ in all_areas}
+    unknown = requested - known
+    if unknown:
+        raise ValueError(f"Unknown area(s): {', '.join(sorted(unknown))}")
+    return [(name, bbox) for name, bbox in all_areas if name in requested]
 
 
 def _collect_segments_for_area(name: str, bbox: tuple, max_candidates: int, rng: random.Random) -> List[dict]:
@@ -141,7 +157,7 @@ def main() -> None:
     SATELLITE_DIR.mkdir(parents=True, exist_ok=True)
 
     all_rows = []
-    areas = _selected_areas(AREAS)
+    areas = _selected_areas(AREAS, include=args.areas)
     for name, bbox in areas:
         logger.info("Collecting segments for %s ...", name)
         try:

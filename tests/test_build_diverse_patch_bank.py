@@ -53,3 +53,12 @@ def test_positive_limit_rejects_non_positive_values():
     assert module._positive_limit(1, "--max-total") == 1
     with pytest.raises(ValueError, match="--max-total must be >= 1"):
         module._positive_limit(0, "--max-total")
+
+
+def test_selected_areas_filters_and_rejects_unknown():
+    module = _load_script_module()
+    areas = [("a", (0, 0, 1, 1)), ("b", (1, 1, 2, 2))]
+
+    assert module._selected_areas(areas, include="b") == [("b", (1, 1, 2, 2))]
+    with pytest.raises(ValueError, match="Unknown area"):
+        module._selected_areas(areas, include="c")
