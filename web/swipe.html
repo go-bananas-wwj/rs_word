@@ -10,7 +10,7 @@
     <header class="swipe-header">
         <div>
             <h1>河流笔画卡片筛选</h1>
-            <p>快捷键：A/← 叉，D/→ 勾，S/↓ 清，W/↑ 上一张，Esc 退出批注框</p>
+            <p>快捷键：A 叉，D 勾，Enter 下一张，空格批注，W/↑ 上一张，Esc 退出批注</p>
         </div>
         <div class="review-toolbar">
             <label>
@@ -28,7 +28,6 @@
                     <option value="rejected">叉</option>
                 </select>
             </label>
-            <button id="prev-card" type="button">上一张</button>
             <a class="swipe-link" href="/review">网格</a>
         </div>
     </header>
@@ -37,6 +36,8 @@
         <section class="swipe-stage" id="stage">
             <p class="review-loading">加载中...</p>
         </section>
+        <button class="swipe-edge swipe-edge-left" id="prev-card" type="button" aria-label="上一张">‹</button>
+        <button class="swipe-edge swipe-edge-right" id="next-card" type="button" aria-label="下一张">›</button>
     </main>
 
     <script>
@@ -44,6 +45,7 @@
         const strokeFilter = document.getElementById('stroke-filter');
         const statusFilter = document.getElementById('status-filter');
         const prevCard = document.getElementById('prev-card');
+        const nextCard = document.getElementById('next-card');
 
         const state = {
             offset: 0,
@@ -101,6 +103,7 @@
         function statsMarkup(data) {
             const current = data.total === 0 ? 0 : state.offset + 1;
             prevCard.disabled = state.history.length === 0;
+            nextCard.disabled = data.total === 0;
             return `
                 <span>当前 ${current} / ${data.total}</span>
                 <span>全部 ${data.status_counts.all}</span>
@@ -175,6 +178,32 @@
             await loadCard(nextOffset);
         }
 
+        async function nextWithoutDecision() {
+            if (!state.current) return;
+            await saveSelection(state.current.decision || 'unreviewed');
+            state.history.push(state.offset);
+            const nextOffset = Math.min(state.offset + 1, Math.max(state.total - 1, 0));
+            await loadCard(nextOffset);
+        }
+
+        function previousCard() {
+            const previous = state.history.pop();
+            if (previous !== undefined) {
+                loadCard(previous).catch(showError);
+            }
+        }
+
+        function toggleNoteFocus() {
+            const note = stage.querySelector('#note');
+            if (!note) return;
+            if (document.activeElement === note) {
+                note.blur();
+            } else {
+                note.focus({preventScroll: true});
+                note.setSelectionRange(note.value.length, note.value.length);
+            }
+        }
+
         function showError(error) {
             state.loading = false;
             stage.innerHTML = `<p class="error">错误：${error.message}</p>`;
@@ -188,15 +217,21 @@
 
         strokeFilter.addEventListener('change', resetAndLoad);
         statusFilter.addEventListener('change', resetAndLoad);
-        prevCard.addEventListener('click', () => {
-            const previous = state.history.pop();
-            if (previous !== undefined) {
-                loadCard(previous).catch(showError);
-            }
-        });
+        prevCard.addEventListener('click', previousCard);
+        nextCard.addEventListener('click', () => nextWithoutDecision().catch(showError));
 
         document.addEventListener('keydown', (event) => {
             const tag = document.activeElement?.tagName;
+            if (event.code === 'Space') {
+                event.preventDefault();
+                toggleNoteFocus();
+                return;
+            }
+            if (event.key === 'Enter' && tag !== 'TEXTAREA') {
+                event.preventDefault();
+                nextWithoutDecision().catch(showError);
+                return;
+            }
             if (tag === 'TEXTAREA' && event.key !== 'Escape') return;
             if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a' || event.key.toLowerCase() === 'x') {
                 event.preventDefault();
@@ -212,10 +247,7 @@
             }
             if (event.key === 'ArrowUp' || event.key.toLowerCase() === 'w') {
                 event.preventDefault();
-                const previous = state.history.pop();
-                if (previous !== undefined) {
-                    loadCard(previous).catch(showError);
-                }
+                previousCard();
             }
             if (event.key === 'Escape') {
                 document.activeElement?.blur();
