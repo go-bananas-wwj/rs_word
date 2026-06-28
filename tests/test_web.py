@@ -22,6 +22,12 @@ def test_review_page():
     assert "河流笔画筛选" in response.text
 
 
+def test_swipe_page():
+    response = client.get("/swipe")
+    assert response.status_code == 200
+    assert "河流笔画卡片筛选" in response.text
+
+
 def test_save_review_selection(monkeypatch, tmp_path):
     selections_path = tmp_path / "review_selections.json"
     monkeypatch.setattr(

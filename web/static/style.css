@@ -279,6 +279,177 @@ pre {
     border-radius: 8px;
 }
 
+.swipe-body {
+    padding: 0;
+    background: #eef1f4;
+}
+
+.swipe-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    background: #ffffff;
+    border-bottom: 1px solid #d6dbe1;
+}
+
+.swipe-header h1 {
+    margin: 0;
+    text-align: left;
+    font-size: 1.2rem;
+}
+
+.swipe-header p {
+    margin: 0.25rem 0 0;
+    color: #667085;
+    font-size: 0.82rem;
+}
+
+.swipe-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.15rem;
+    padding: 0 0.75rem;
+    border: 1px solid #c8ced7;
+    border-radius: 4px;
+    background: #ffffff;
+    color: #1f2937;
+    text-decoration: none;
+}
+
+.swipe-main {
+    max-width: min(1120px, calc(100vw - 2rem));
+    margin: 0 auto;
+    padding: 1rem 0 1.25rem;
+    background: transparent;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.swipe-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.swipe-stats span {
+    padding: 0.35rem 0.55rem;
+    background: #ffffff;
+    border: 1px solid #d6dbe1;
+    border-radius: 4px;
+    font-size: 0.86rem;
+}
+
+.swipe-stage {
+    min-height: calc(100vh - 9rem);
+}
+
+.swipe-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.42fr);
+    gap: 0;
+    overflow: hidden;
+    min-height: calc(100vh - 9rem);
+    background: #ffffff;
+    border: 1px solid #d6dbe1;
+    border-radius: 8px;
+}
+
+.swipe-image-wrap {
+    display: grid;
+    place-items: center;
+    min-height: 34rem;
+    padding: 0.75rem;
+    background: #111827;
+}
+
+.swipe-image-wrap a {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+}
+
+.swipe-image-wrap img {
+    display: block;
+    max-width: 100%;
+    max-height: calc(100vh - 11rem);
+    object-fit: contain;
+    background: #eef1f4;
+}
+
+.swipe-card-info {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: 0.75rem;
+    padding: 0.85rem;
+    border-left: 1px solid #d6dbe1;
+}
+
+.swipe-meta {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.4rem;
+    color: #475467;
+    font-size: 0.9rem;
+}
+
+.swipe-meta strong {
+    color: #101828;
+}
+
+.swipe-card-info textarea {
+    width: 100%;
+    min-height: 12rem;
+    box-sizing: border-box;
+    resize: vertical;
+    padding: 0.65rem;
+    border: 1px solid #c8ced7;
+    border-radius: 4px;
+    font: inherit;
+}
+
+.swipe-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+}
+
+.swipe-actions button {
+    min-height: 3.25rem;
+    padding: 0.5rem;
+    font-size: 1.05rem;
+}
+
+.swipe-actions .reject {
+    background: #dc2626;
+}
+
+.swipe-actions .reject:hover {
+    background: #b91c1c;
+}
+
+.swipe-actions .accept {
+    background: #16a34a;
+}
+
+.swipe-actions .accept:hover {
+    background: #15803d;
+}
+
+.swipe-actions .skip {
+    background: #475467;
+}
+
+.swipe-actions .skip:hover {
+    background: #344054;
+}
+
 @media (max-width: 720px) {
     .review-header {
         position: static;
@@ -292,5 +463,32 @@ pre {
 
     .review-controls {
         grid-template-columns: 1fr;
+    }
+
+    .swipe-header {
+        position: static;
+        display: block;
+    }
+
+    .swipe-main {
+        max-width: calc(100vw - 1rem);
+        padding-top: 0.5rem;
+    }
+
+    .swipe-card {
+        grid-template-columns: 1fr;
+    }
+
+    .swipe-card-info {
+        border-left: 0;
+        border-top: 1px solid #d6dbe1;
+    }
+
+    .swipe-image-wrap {
+        min-height: 21rem;
+    }
+
+    .swipe-image-wrap img {
+        max-height: 55vh;
     }
 }

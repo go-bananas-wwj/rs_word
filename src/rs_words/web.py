@@ -61,6 +61,11 @@ def review_page():
     return (WEB_DIR / "review.html").read_text(encoding="utf-8")
 
 
+@app.get("/swipe", response_class=HTMLResponse)
+def swipe_page():
+    return (WEB_DIR / "swipe.html").read_text(encoding="utf-8")
+
+
 def _review_manifest_path() -> Path:
     return REVIEW_DATA_DIR / "manifest.jsonl"
 
