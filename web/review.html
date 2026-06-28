@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>河流笔画筛选</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="review-body">
+    <header class="review-header">
+        <div>
+            <h1>河流笔画筛选</h1>
+            <p id="save-path"></p>
+        </div>
+        <div class="review-toolbar">
+            <label>
+                笔画
+                <select id="stroke-filter">
+                    <option value="all">全部</option>
+                </select>
+            </label>
+            <label>
+                状态
+                <select id="status-filter">
+                    <option value="all">全部</option>
+                    <option value="unreviewed">未筛</option>
+                    <option value="selected">勾</option>
+                    <option value="rejected">叉</option>
+                </select>
+            </label>
+            <button id="prev-page" type="button">上一页</button>
+            <button id="next-page" type="button">下一页</button>
+        </div>
+    </header>
+
+    <main class="review-main">
+        <section class="review-stats" id="stats"></section>
+        <section class="review-grid" id="grid"></section>
+    </main>
+
+    <script>
+        const grid = document.getElementById('grid');
+        const stats = document.getElementById('stats');
+        const strokeFilter = document.getElementById('stroke-filter');
+        const statusFilter = document.getElementById('status-filter');
+        const prevPage = document.getElementById('prev-page');
+        const nextPage = document.getElementById('next-page');
+        const savePath = document.getElementById('save-path');
+
+        let state = {
+            offset: 0,
+            limit: 60,
+            total: 0,
+            strokesLoaded: false,
+            noteTimers: new Map(),
+        };
+
+        function decisionText(decision) {
+            if (decision === 'selected') return '已勾';
+            if (decision === 'rejected') return '已叉';
+            return '未筛';
+        }
+
+        function buildUrl() {
+            const params = new URLSearchParams({
+                stroke: strokeFilter.value,
+                status: statusFilter.value,
+                offset: state.offset,
+                limit: state.limit,
+            });
+            return `/api/review/items?${params.toString()}`;
+        }
+
+        async function loadItems() {
+            grid.innerHTML = '<p class="review-loading">加载中...</p>';
+            const response = await fetch(buildUrl());
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.detail || `请求失败：${response.status}`);
+            }
+            const data = await response.json();
+            state.total = data.total;
+            savePath.textContent = `标注保存到：${data.selection_path}`;
+            renderFilters(data);
+            renderStats(data);
+            renderGrid(data.items);
+            prevPage.disabled = state.offset === 0;
+            nextPage.disabled = state.offset + state.limit >= state.total;
+        }
+
+        function renderFilters(data) {
+            if (state.strokesLoaded) return;
+            for (const stroke of data.strokes) {
+                const option = document.createElement('option');
+                option.value = stroke;
+                option.textContent = `${stroke} (${data.stroke_counts[stroke]})`;
+                strokeFilter.appendChild(option);
+            }
+            state.strokesLoaded = true;
+        }
+
+        function renderStats(data) {
+            const start = data.total === 0 ? 0 : data.offset + 1;
+            const end = Math.min(data.offset + data.limit, data.total);
+            stats.innerHTML = `
+                <span>当前 ${start}-${end} / ${data.total}</span>
+                <span>全部 ${data.status_counts.all}</span>
+                <span>已勾 ${data.status_counts.selected}</span>
+                <span>已叉 ${data.status_counts.rejected}</span>
+                <span>未筛 ${data.status_counts.unreviewed}</span>
+            `;
+        }
+
+        function renderGrid(items) {
+            if (!items.length) {
+                grid.innerHTML = '<p class="review-loading">这个筛选条件下没有图片。</p>';
+                return;
+            }
+            grid.innerHTML = '';
+            for (const item of items) {
+                const card = document.createElement('article');
+                card.className = `review-card ${item.decision}`;
+                card.dataset.chipId = item.chip_id;
+                card.innerHTML = `
+                    <a href="${item.label_url}" target="_blank" rel="noreferrer">
+                        <img src="${item.image_url}" alt="${item.chip_id}" loading="lazy">
+                    </a>
+                    <div class="review-meta">
+                        <strong>${item.stroke_type}</strong>
+                        <span>#${item.rank ?? '-'}</span>
+                        <span>${item.river ?? '-'}</span>
+                        <span>${item.datetime ? item.datetime.slice(0, 10) : '-'}</span>
+                    </div>
+                    <div class="review-controls">
+                        <div class="decision-buttons">
+                            <button type="button" data-decision="selected">勾</button>
+                            <button type="button" data-decision="rejected">叉</button>
+                            <button type="button" data-decision="unreviewed">清</button>
+                            <span>${decisionText(item.decision)}</span>
+                        </div>
+                        <textarea placeholder="标注这张图..." rows="3">${item.note || ''}</textarea>
+                    </div>
+                `;
+                for (const button of card.querySelectorAll('button[data-decision]')) {
+                    if (button.dataset.decision === item.decision) {
+                        button.classList.add('active');
+                    }
+                    button.addEventListener('click', () => {
+                        const note = card.querySelector('textarea').value;
+                        saveSelection(card, button.dataset.decision, note);
+                    });
+                }
+                card.querySelector('textarea').addEventListener('input', (event) => {
+                    window.clearTimeout(state.noteTimers.get(item.chip_id));
+                    const timer = window.setTimeout(() => {
+                        const currentDecision = card.classList.contains('selected')
+                            ? 'selected'
+                            : card.classList.contains('rejected')
+                                ? 'rejected'
+                                : 'unreviewed';
+                        saveSelection(card, currentDecision, event.target.value);
+                    }, 500);
+                    state.noteTimers.set(item.chip_id, timer);
+                });
+                grid.appendChild(card);
+            }
+        }
+
+        async function saveSelection(card, decision, note) {
+            const response = await fetch('/api/review/selection', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    chip_id: card.dataset.chipId,
+                    decision,
+                    note,
+                }),
+            });
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.detail || `保存失败：${response.status}`);
+            }
+            card.classList.remove('selected', 'rejected', 'unreviewed');
+            card.classList.add(decision);
+            for (const button of card.querySelectorAll('button[data-decision]')) {
+                button.classList.toggle('active', button.dataset.decision === decision);
+            }
+            card.querySelector('.decision-buttons span').textContent = decisionText(decision);
+        }
+
+        function resetAndLoad() {
+            state.offset = 0;
+            loadItems().catch((err) => {
+                grid.innerHTML = `<p class="error">错误：${err.message}</p>`;
+            });
+        }
+
+        strokeFilter.addEventListener('change', resetAndLoad);
+        statusFilter.addEventListener('change', resetAndLoad);
+        prevPage.addEventListener('click', () => {
+            state.offset = Math.max(0, state.offset - state.limit);
+            loadItems();
+        });
+        nextPage.addEventListener('click', () => {
+            state.offset += state.limit;
+            loadItems();
+        });
+
+        loadItems().catch((err) => {
+            grid.innerHTML = `<p class="error">错误：${err.message}</p>`;
+        });
+    </script>
+</body>
+</html>
