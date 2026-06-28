@@ -195,8 +195,8 @@ pre {
     display: block;
     width: 100%;
     aspect-ratio: 1 / 1;
-    object-fit: cover;
-    background: #d0d5dd;
+    object-fit: contain;
+    background: #eef1f4;
 }
 
 .review-meta {
