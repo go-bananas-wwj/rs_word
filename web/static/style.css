@@ -281,20 +281,20 @@ pre {
 
 .swipe-body {
     padding: 0;
-    background: #eef1f4;
+    overflow: hidden;
+    background: #e7ebef;
 }
 
 .swipe-header {
-    position: sticky;
-    top: 0;
-    z-index: 10;
     display: flex;
     gap: 1rem;
     align-items: center;
     justify-content: space-between;
-    padding: 0.75rem 1rem;
-    background: #ffffff;
-    border-bottom: 1px solid #d6dbe1;
+    height: 4.4rem;
+    box-sizing: border-box;
+    padding: 0.6rem 1rem;
+    background: #fbfcfd;
+    border-bottom: 1px solid #d0d6de;
 }
 
 .swipe-header h1 {
@@ -306,7 +306,7 @@ pre {
 .swipe-header p {
     margin: 0.25rem 0 0;
     color: #667085;
-    font-size: 0.82rem;
+    font-size: 0.8rem;
 }
 
 .swipe-link {
@@ -322,9 +322,11 @@ pre {
 }
 
 .swipe-main {
-    max-width: min(1120px, calc(100vw - 2rem));
-    margin: 0 auto;
-    padding: 1rem 0 1.25rem;
+    width: 100vw;
+    height: calc(100vh - 4.4rem);
+    max-width: none;
+    margin: 0;
+    padding: 0;
     background: transparent;
     border-radius: 0;
     box-shadow: none;
@@ -334,38 +336,42 @@ pre {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
-    margin-bottom: 0.75rem;
+    margin: 0;
 }
 
 .swipe-stats span {
     padding: 0.35rem 0.55rem;
-    background: #ffffff;
+    background: #f8fafc;
     border: 1px solid #d6dbe1;
     border-radius: 4px;
-    font-size: 0.86rem;
+    font-size: 0.8rem;
 }
 
 .swipe-stage {
-    min-height: calc(100vh - 9rem);
+    height: 100%;
+    padding: 0.75rem;
+    box-sizing: border-box;
 }
 
 .swipe-card {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.42fr);
+    grid-template-columns: minmax(0, 1fr) 21rem;
     gap: 0;
     overflow: hidden;
-    min-height: calc(100vh - 9rem);
-    background: #ffffff;
-    border: 1px solid #d6dbe1;
+    height: 100%;
+    background: #fbfcfd;
+    border: 1px solid #cfd6df;
     border-radius: 8px;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
 }
 
 .swipe-image-wrap {
     display: grid;
     place-items: center;
-    min-height: 34rem;
-    padding: 0.75rem;
-    background: #111827;
+    min-width: 0;
+    min-height: 0;
+    padding: 0.8rem;
+    background: #151a23;
 }
 
 .swipe-image-wrap a {
@@ -378,40 +384,60 @@ pre {
 .swipe-image-wrap img {
     display: block;
     max-width: 100%;
-    max-height: calc(100vh - 11rem);
+    max-height: calc(100vh - 6.8rem);
     object-fit: contain;
     background: #eef1f4;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
 }
 
 .swipe-card-info {
     display: grid;
-    grid-template-rows: auto 1fr auto;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
     gap: 0.75rem;
     padding: 0.85rem;
     border-left: 1px solid #d6dbe1;
+    min-height: 0;
+    background: #ffffff;
 }
 
 .swipe-meta {
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr;
     gap: 0.4rem;
     color: #475467;
-    font-size: 0.9rem;
+    font-size: 0.82rem;
 }
 
 .swipe-meta strong {
+    margin-right: 0.4rem;
     color: #101828;
+    font-size: 1.05rem;
+}
+
+.swipe-meta span {
+    overflow-wrap: anywhere;
+}
+
+.swipe-note {
+    display: grid;
+    gap: 0.35rem;
+    width: auto;
+    text-align: left;
+    font-weight: 600;
+    color: #344054;
 }
 
 .swipe-card-info textarea {
     width: 100%;
-    min-height: 12rem;
+    min-height: 8rem;
+    height: 100%;
     box-sizing: border-box;
     resize: vertical;
     padding: 0.65rem;
     border: 1px solid #c8ced7;
     border-radius: 4px;
     font: inherit;
+    font-weight: 400;
 }
 
 .swipe-actions {
@@ -421,9 +447,22 @@ pre {
 }
 
 .swipe-actions button {
+    display: grid;
+    gap: 0.12rem;
+    place-items: center;
     min-height: 3.25rem;
     padding: 0.5rem;
-    font-size: 1.05rem;
+    border-radius: 6px;
+    font-size: 1.02rem;
+    font-weight: 700;
+}
+
+.swipe-actions kbd {
+    min-width: 1.35rem;
+    padding: 0.08rem 0.25rem;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.22);
+    font: 0.72rem ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 .swipe-actions .reject {
@@ -468,15 +507,23 @@ pre {
     .swipe-header {
         position: static;
         display: block;
+        height: auto;
     }
 
     .swipe-main {
-        max-width: calc(100vw - 1rem);
-        padding-top: 0.5rem;
+        height: auto;
+        min-height: calc(100vh - 7rem);
+    }
+
+    .swipe-stage {
+        height: auto;
+        padding: 0.5rem;
     }
 
     .swipe-card {
         grid-template-columns: 1fr;
+        height: auto;
+        min-height: 0;
     }
 
     .swipe-card-info {
@@ -485,10 +532,10 @@ pre {
     }
 
     .swipe-image-wrap {
-        min-height: 21rem;
+        min-height: 0;
     }
 
     .swipe-image-wrap img {
-        max-height: 55vh;
+        max-height: 47vh;
     }
 }

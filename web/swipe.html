@@ -10,7 +10,7 @@
     <header class="swipe-header">
         <div>
             <h1>河流笔画卡片筛选</h1>
-            <p id="save-path"></p>
+            <p>快捷键：A/← 叉，D/→ 勾，S/↓ 清，W/↑ 上一张，Esc 退出批注框</p>
         </div>
         <div class="review-toolbar">
             <label>
@@ -34,7 +34,6 @@
     </header>
 
     <main class="swipe-main">
-        <section class="swipe-stats" id="stats"></section>
         <section class="swipe-stage" id="stage">
             <p class="review-loading">加载中...</p>
         </section>
@@ -42,8 +41,6 @@
 
     <script>
         const stage = document.getElementById('stage');
-        const stats = document.getElementById('stats');
-        const savePath = document.getElementById('save-path');
         const strokeFilter = document.getElementById('stroke-filter');
         const statusFilter = document.getElementById('status-filter');
         const prevCard = document.getElementById('prev-card');
@@ -80,16 +77,14 @@
             state.loading = false;
             state.total = data.total;
             state.offset = Math.min(offset, Math.max(data.total - 1, 0));
-            savePath.textContent = `标注保存到：${data.selection_path}`;
             renderFilters(data);
-            renderStats(data);
             if (!data.items.length) {
                 state.current = null;
                 stage.innerHTML = '<p class="review-loading">这个筛选条件下没有图片。</p>';
                 return;
             }
             state.current = data.items[0];
-            renderCard(state.current);
+            renderCard(state.current, data);
         }
 
         function renderFilters(data) {
@@ -103,19 +98,19 @@
             state.strokesLoaded = true;
         }
 
-        function renderStats(data) {
+        function statsMarkup(data) {
             const current = data.total === 0 ? 0 : state.offset + 1;
-            stats.innerHTML = `
+            prevCard.disabled = state.history.length === 0;
+            return `
                 <span>当前 ${current} / ${data.total}</span>
                 <span>全部 ${data.status_counts.all}</span>
                 <span>已勾 ${data.status_counts.selected}</span>
                 <span>已叉 ${data.status_counts.rejected}</span>
                 <span>未筛 ${data.status_counts.unreviewed}</span>
             `;
-            prevCard.disabled = state.history.length === 0;
         }
 
-        function renderCard(item) {
+        function renderCard(item, data) {
             stage.innerHTML = `
                 <article class="swipe-card" data-chip-id="${item.chip_id}">
                     <div class="swipe-image-wrap">
@@ -124,17 +119,24 @@
                         </a>
                     </div>
                     <div class="swipe-card-info">
+                        <div class="swipe-stats">${statsMarkup(data)}</div>
                         <div class="swipe-meta">
-                            <strong>${item.stroke_type}</strong>
-                            <span>#${item.rank ?? '-'}</span>
-                            <span>${item.river ?? '-'}</span>
+                            <div>
+                                <strong>${item.stroke_type}</strong>
+                                <span>#${item.rank ?? '-'}</span>
+                            </div>
                             <span>${item.datetime ? item.datetime.slice(0, 10) : '-'}</span>
+                            <span>${item.river ?? '-'}</span>
+                            <span>${item.chip_id}</span>
                         </div>
-                        <textarea id="note" placeholder="标注这张图..." rows="4">${item.note || ''}</textarea>
+                        <label class="swipe-note">
+                            <span>批注</span>
+                            <textarea id="note" placeholder="这张图哪里好/哪里不对..." rows="4">${item.note || ''}</textarea>
+                        </label>
                         <div class="swipe-actions">
-                            <button class="reject" type="button" data-decision="rejected">叉</button>
-                            <button class="skip" type="button" data-decision="unreviewed">跳过</button>
-                            <button class="accept" type="button" data-decision="selected">勾</button>
+                            <button class="reject" type="button" data-decision="rejected"><span>叉</span><kbd>A</kbd></button>
+                            <button class="skip" type="button" data-decision="unreviewed"><span>清</span><kbd>S</kbd></button>
+                            <button class="accept" type="button" data-decision="selected"><span>勾</span><kbd>D</kbd></button>
                         </div>
                     </div>
                 </article>
@@ -144,7 +146,6 @@
                     saveAndAdvance(button.dataset.decision).catch(showError);
                 });
             }
-            stage.querySelector('#note').focus({preventScroll: true});
         }
 
         async function saveSelection(decision) {
@@ -197,17 +198,24 @@
         document.addEventListener('keydown', (event) => {
             const tag = document.activeElement?.tagName;
             if (tag === 'TEXTAREA' && event.key !== 'Escape') return;
-            if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'x') {
+            if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a' || event.key.toLowerCase() === 'x') {
                 event.preventDefault();
                 saveAndAdvance('rejected').catch(showError);
             }
-            if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'v') {
+            if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd' || event.key.toLowerCase() === 'v') {
                 event.preventDefault();
                 saveAndAdvance('selected').catch(showError);
             }
             if (event.key === 'ArrowDown' || event.key.toLowerCase() === 's') {
                 event.preventDefault();
                 saveAndAdvance('unreviewed').catch(showError);
+            }
+            if (event.key === 'ArrowUp' || event.key.toLowerCase() === 'w') {
+                event.preventDefault();
+                const previous = state.history.pop();
+                if (previous !== undefined) {
+                    loadCard(previous).catch(showError);
+                }
             }
             if (event.key === 'Escape') {
                 document.activeElement?.blur();
