@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import html
 import json
 import logging
 import sys
+import threading
 from pathlib import Path
 from typing import Iterable
 
@@ -55,6 +57,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fallback-cloud-cover", type=float, default=30.0)
     parser.add_argument("--max-items", type=int, default=8)
     parser.add_argument("--bbox-scale", type=float, default=1.0)
+    parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--no-contact-sheet", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
@@ -82,7 +85,10 @@ def iter_candidates(candidate_roots: Iterable[Path], strokes: list[str], per_str
                 if len(selected[stroke]) >= per_stroke:
                     break
                 row = json.loads(line)
-                key = (stroke, int(row.get("source_index", -1)), str(row.get("target_river", "")))
+                key = (
+                    stroke,
+                    str(row.get("chip_id") or row.get("rank") or row.get("geometry_wkt") or ""),
+                )
                 if key in seen:
                     continue
                 row["candidate_root"] = str(root)
@@ -171,6 +177,17 @@ def safe_id(row: dict, rank: int) -> str:
     return f"{stroke}_{rank:03d}_{river}_lon{lon:.3f}_lat{lat:.3f}".replace("-", "_")
 
 
+_thread_state = threading.local()
+
+
+def get_catalog():
+    catalog = getattr(_thread_state, "catalog", None)
+    if catalog is None:
+        catalog = pystac_client.Client.open(PC_STAC_URL)
+        _thread_state.catalog = catalog
+    return catalog
+
+
 def download_one(catalog, row: dict, rank: int, args: argparse.Namespace) -> dict | None:
     stroke = row["stroke_type"]
     original_bbox = tuple(float(v) for v in row["api_bbox"])
@@ -228,6 +245,10 @@ def download_one(catalog, row: dict, rank: int, args: argparse.Namespace) -> dic
     return None
 
 
+def download_task(row: dict, rank: int, args: argparse.Namespace) -> dict | None:
+    return download_one(get_catalog(), row, rank, args)
+
+
 def make_gallery(rows: list[dict], output_root: Path) -> None:
     css = """body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:24px;background:#f7f7f4;color:#151515}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}.card{background:white;border:1px solid #ddd;border-radius:6px;padding:10px}.card img{width:100%;display:block;border:1px solid #eee}.meta{font-size:12px;line-height:1.45}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;word-break:break-all}h2{margin-top:30px}"""
     parts = ["<!doctype html><meta charset='utf-8'><title>Sentinel stroke imagery</title>", f"<style>{css}</style>"]
@@ -280,6 +301,8 @@ def make_sheet(rows: list[dict], output_root: Path, thumb_w: int = 240) -> None:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     args = parse_args()
+    if args.workers <= 0:
+        raise ValueError("--workers must be positive")
     strokes = parse_strokes(args.strokes)
     candidates = iter_candidates(args.candidate_roots, strokes, args.per_stroke)
     args.output_root.mkdir(parents=True, exist_ok=True)
@@ -288,16 +311,38 @@ def main() -> None:
         print(json.dumps(candidates[:5], ensure_ascii=False, indent=2))
         print(f"planned={len(candidates)}")
         return
-    catalog = pystac_client.Client.open(PC_STAC_URL)
-    rows = []
+
+    tasks = []
+    rank_by_stroke = {stroke: 0 for stroke in strokes}
     for index, row in enumerate(candidates, 1):
-        rank = sum(1 for existing in rows if existing["stroke_type"] == row["stroke_type"]) + 1
-        meta = download_one(catalog, row, rank, args)
-        if meta is None:
-            logger.warning("No Sentinel chip saved for %s candidate %s", row["stroke_type"], index)
-            continue
-        rows.append(meta)
-        logger.info("Saved %s (%d/%d)", meta["chip_id"], len(rows), len(candidates))
+        rank_by_stroke[row["stroke_type"]] = rank_by_stroke.get(row["stroke_type"], 0) + 1
+        tasks.append((index, row, rank_by_stroke[row["stroke_type"]]))
+
+    rows = []
+    if args.workers == 1:
+        catalog = get_catalog()
+        for index, row, rank in tasks:
+            meta = download_one(catalog, row, rank, args)
+            if meta is None:
+                logger.warning("No Sentinel chip saved for %s candidate %s", row["stroke_type"], index)
+                continue
+            rows.append(meta)
+            logger.info("Saved %s (%d/%d)", meta["chip_id"], len(rows), len(candidates))
+    else:
+        with ThreadPoolExecutor(max_workers=args.workers) as pool:
+            futures = {
+                pool.submit(download_task, row, rank, args): (index, row)
+                for index, row, rank in tasks
+            }
+            for future in as_completed(futures):
+                index, row = futures[future]
+                meta = future.result()
+                if meta is None:
+                    logger.warning("No Sentinel chip saved for %s candidate %s", row["stroke_type"], index)
+                    continue
+                rows.append(meta)
+                logger.info("Saved %s (%d/%d)", meta["chip_id"], len(rows), len(candidates))
+    rows.sort(key=lambda item: (item["stroke_type"], item["rank"]))
     with manifest_path.open("w", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
