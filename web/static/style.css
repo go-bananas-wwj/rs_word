@@ -508,6 +508,10 @@ pre {
     background: #b91c1c;
 }
 
+.swipe-actions .reject.active {
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.24);
+}
+
 .swipe-actions .accept {
     background: #16a34a;
 }
@@ -516,12 +520,20 @@ pre {
     background: #15803d;
 }
 
+.swipe-actions .accept.active {
+    box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.24);
+}
+
 .swipe-actions .skip {
     background: #475467;
 }
 
 .swipe-actions .skip:hover {
     background: #344054;
+}
+
+.swipe-actions .skip.active {
+    box-shadow: 0 0 0 3px rgba(71, 84, 103, 0.24);
 }
 
 @media (max-width: 720px) {

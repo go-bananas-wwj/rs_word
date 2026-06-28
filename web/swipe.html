@@ -51,6 +51,7 @@
             offset: 0,
             total: 0,
             current: null,
+            currentDecision: 'unreviewed',
             history: [],
             strokesLoaded: false,
             loading: false,
@@ -86,6 +87,7 @@
                 return;
             }
             state.current = data.items[0];
+            state.currentDecision = state.current.decision || 'unreviewed';
             renderCard(state.current, data);
         }
 
@@ -145,9 +147,16 @@
                 </article>
             `;
             for (const button of stage.querySelectorAll('button[data-decision]')) {
+                button.classList.toggle('active', button.dataset.decision === state.currentDecision);
                 button.addEventListener('click', () => {
-                    saveAndAdvance(button.dataset.decision).catch(showError);
+                    markCurrent(button.dataset.decision).catch(showError);
                 });
+            }
+        }
+
+        function updateDecisionButtons(decision) {
+            for (const button of stage.querySelectorAll('button[data-decision]')) {
+                button.classList.toggle('active', button.dataset.decision === decision);
             }
         }
 
@@ -167,6 +176,13 @@
                 const data = await response.json();
                 throw new Error(data.detail || `保存失败：${response.status}`);
             }
+            state.currentDecision = decision;
+            state.current.decision = decision;
+            updateDecisionButtons(decision);
+        }
+
+        async function markCurrent(decision) {
+            await saveSelection(decision);
         }
 
         async function saveAndAdvance(decision) {
@@ -180,7 +196,7 @@
 
         async function nextWithoutDecision() {
             if (!state.current) return;
-            await saveSelection(state.current.decision || 'unreviewed');
+            await saveSelection(state.currentDecision || 'unreviewed');
             state.history.push(state.offset);
             const nextOffset = Math.min(state.offset + 1, Math.max(state.total - 1, 0));
             await loadCard(nextOffset);
@@ -235,15 +251,15 @@
             if (tag === 'TEXTAREA' && event.key !== 'Escape') return;
             if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a' || event.key.toLowerCase() === 'x') {
                 event.preventDefault();
-                saveAndAdvance('rejected').catch(showError);
+                markCurrent('rejected').catch(showError);
             }
             if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd' || event.key.toLowerCase() === 'v') {
                 event.preventDefault();
-                saveAndAdvance('selected').catch(showError);
+                markCurrent('selected').catch(showError);
             }
             if (event.key === 'ArrowDown' || event.key.toLowerCase() === 's') {
                 event.preventDefault();
-                saveAndAdvance('unreviewed').catch(showError);
+                markCurrent('unreviewed').catch(showError);
             }
             if (event.key === 'ArrowUp' || event.key.toLowerCase() === 'w') {
                 event.preventDefault();
